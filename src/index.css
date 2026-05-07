@@ -1,0 +1,110 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 218 45% 4%;
+    --foreground: 213 20% 93%;
+    --card: 216 28% 7%;
+    --card-foreground: 213 20% 93%;
+    --popover: 216 28% 7%;
+    --popover-foreground: 213 20% 93%;
+    --primary: 227 100% 59%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 215 22% 11%;
+    --secondary-foreground: 213 20% 93%;
+    --muted: 215 22% 11%;
+    --muted-foreground: 210 14% 46%;
+    --accent: 227 100% 59%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 213 28% 17%;
+    --input: 213 28% 17%;
+    --ring: 227 100% 59%;
+    --radius: 0.625rem;
+    --sidebar-background: 216 28% 7%;
+    --sidebar-foreground: 213 20% 93%;
+    --sidebar-primary: 227 100% 59%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 215 22% 11%;
+    --sidebar-accent-foreground: 213 20% 93%;
+    --sidebar-border: 213 28% 17%;
+    --sidebar-ring: 227 100% 59%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  
+  html {
+    scroll-behavior: smooth;
+  }
+  
+  body {
+    @apply bg-bc-bg text-bc-text font-body antialiased;
+    overflow-x: hidden;
+  }
+
+  ::selection {
+    background-color: rgba(46, 91, 255, 0.3);
+    color: #E8ECF1;
+  }
+
+  /* Scrollbar styling */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: #060B14;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #1E2D3D;
+    border-radius: 3px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #2E5BFF;
+  }
+}
+
+@layer components {
+  .text-gradient {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(135deg, #2E5BFF 0%, #7C3AED 50%, #06B6D4 100%);
+  }
+
+  .glow-accent {
+    box-shadow: 0 0 20px rgba(46, 91, 255, 0.15);
+  }
+
+  .glow-strong {
+    box-shadow: 0 0 40px rgba(46, 91, 255, 0.25);
+  }
+
+  .card-surface {
+    @apply bg-bc-surface border border-bc-border rounded-2xl;
+  }
+
+  .card-elevated {
+    @apply bg-bc-surface-elevated border border-bc-border rounded-2xl;
+  }
+}
+
+@layer utilities {
+  .font-display {
+    font-family: 'Space Grotesk', sans-serif;
+  }
+
+  .font-body {
+    font-family: 'Inter', sans-serif;
+  }
+}
