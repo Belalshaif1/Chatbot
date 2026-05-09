@@ -1,100 +1,100 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 
-export interface Source {
+export type SourceType = 'file' | 'website' | 'text' | 'qa';
+export type SourceStatus = 'processing' | 'ready' | 'error';
+
+export interface TrainingSource {
   id: string;
-  name: string;
-  type: 'pdf' | 'doc' | 'csv' | 'website' | 'integration';
-  size?: string;
-  pages?: number;
-  status: 'synced' | 'syncing' | 'error';
-  bots: string[];
-  lastSynced: string;
+  botId: string;             // Which bot this belongs to
+  name: string;              // Display name (filename / URL / "Custom Text")
+  type: SourceType;
+  content: string;           // Extracted text content (the training data)
+  sizeLabel: string;         // Human-readable size
+  charCount: number;         // Character count of content
+  status: SourceStatus;
+  errorMsg?: string;
+  createdAt: string;
 }
 
 interface SourceContextType {
-  sources: Source[];
-  addSource: (source: Omit<Source, 'id' | 'lastSynced' | 'status'>) => void;
+  sources: TrainingSource[];
+  getSourcesForBot: (botId: string) => TrainingSource[];
+  getTrainingContext: (botId: string) => string;   // Combined training text for Gemini
+  addSource: (source: Omit<TrainingSource, 'id' | 'createdAt'>) => string;
   deleteSource: (id: string) => void;
-  syncSource: (id: string) => void;
+  updateSourceStatus: (id: string, status: SourceStatus, content?: string, error?: string) => void;
 }
 
 const SourceContext = createContext<SourceContextType | undefined>(undefined);
 
-const initialSources: Source[] = [
-  {
-    id: '1',
-    name: 'product-docs.pdf',
-    type: 'pdf',
-    size: '12.4 MB',
-    pages: 156,
-    status: 'synced',
-    bots: ['Sales Assistant', 'Support Bot'],
-    lastSynced: '2 hours ago',
-  },
-  {
-    id: '2',
-    name: 'pricing-sheet.csv',
-    type: 'csv',
-    size: '245 KB',
-    status: 'synced',
-    bots: ['Sales Assistant'],
-    lastSynced: '1 day ago',
-  },
-];
-
 export const SourceProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [sources, setSources] = useState<Source[]>(() => {
-    const saved = localStorage.getItem('bc_sources');
-    return saved ? JSON.parse(saved) : initialSources;
+  const [sources, setSources] = useState<TrainingSource[]>(() => {
+    const saved = localStorage.getItem('bc_training_sources');
+    return saved ? JSON.parse(saved) : [];
   });
 
   useEffect(() => {
-    localStorage.setItem('bc_sources', JSON.stringify(sources));
+    // Only persist metadata + first 100KB of content per source to avoid quota issues
+    const toSave = sources.map(s => ({
+      ...s,
+      content: s.content.slice(0, 100_000),
+    }));
+    try {
+      localStorage.setItem('bc_training_sources', JSON.stringify(toSave));
+    } catch {
+      console.warn('localStorage quota exceeded — training sources not fully persisted');
+    }
   }, [sources]);
 
-  const addSource = (sourceData: Omit<Source, 'id' | 'lastSynced' | 'status'>) => {
-    const newSource: Source = {
+  const getSourcesForBot = (botId: string) =>
+    sources.filter(s => s.botId === botId && s.status === 'ready');
+
+  const getTrainingContext = (botId: string): string => {
+    const botSources = getSourcesForBot(botId);
+    if (botSources.length === 0) return '';
+
+    const parts = botSources.map(s => {
+      const label = s.type === 'website' ? `🌐 Website: ${s.name}` :
+                    s.type === 'file' ? `📄 File: ${s.name}` :
+                    s.type === 'qa' ? `❓ Q&A` : `📝 Text`;
+      return `=== ${label} ===\n${s.content}`;
+    });
+
+    return `KNOWLEDGE BASE (use this to answer questions accurately):\n\n${parts.join('\n\n')}`;
+  };
+
+  const addSource = (sourceData: Omit<TrainingSource, 'id' | 'createdAt'>): string => {
+    const id = 'src-' + Math.random().toString(36).substr(2, 9);
+    const newSource: TrainingSource = {
       ...sourceData,
-      id: Math.random().toString(36).substr(2, 9),
-      status: 'syncing',
-      lastSynced: 'Just now',
+      id,
+      createdAt: new Date().toISOString(),
     };
-    setSources((prev) => [newSource, ...prev]);
-    
-    // Simulate sync completion
-    setTimeout(() => {
-      setSources((prev) => 
-        prev.map(s => s.id === newSource.id ? { ...s, status: 'synced' } : s)
-      );
-    }, 3000);
+    setSources(prev => [newSource, ...prev]);
+    return id;
   };
 
   const deleteSource = (id: string) => {
-    setSources((prev) => prev.filter((s) => s.id !== id));
+    setSources(prev => prev.filter(s => s.id !== id));
   };
 
-  const syncSource = (id: string) => {
-    setSources((prev) => 
-      prev.map(s => s.id === id ? { ...s, status: 'syncing' } : s)
-    );
-    setTimeout(() => {
-      setSources((prev) => 
-        prev.map(s => s.id === id ? { ...s, status: 'synced', lastSynced: 'Just now' } : s)
-      );
-    }, 2000);
+  const updateSourceStatus = (id: string, status: SourceStatus, content?: string, error?: string) => {
+    setSources(prev => prev.map(s =>
+      s.id === id
+        ? { ...s, status, ...(content !== undefined ? { content, charCount: content.length } : {}), ...(error ? { errorMsg: error } : {}) }
+        : s
+    ));
   };
 
   return (
-    <SourceContext.Provider value={{ sources, addSource, deleteSource, syncSource }}>
+    <SourceContext.Provider value={{ sources, getSourcesForBot, getTrainingContext, addSource, deleteSource, updateSourceStatus }}>
       {children}
     </SourceContext.Provider>
   );
 };
 
 export const useSources = () => {
-  const context = useContext(SourceContext);
-  if (context === undefined) {
-    throw new Error('useSources must be used within a SourceProvider');
-  }
-  return context;
+  const ctx = useContext(SourceContext);
+  if (!ctx) throw new Error('useSources must be used within SourceProvider');
+  return ctx;
 };

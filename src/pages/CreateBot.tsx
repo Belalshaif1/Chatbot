@@ -17,6 +17,7 @@ import {
   FileCode,
 } from 'lucide-react';
 import { useBots } from '@/context/BotContext';
+import { useAuth } from '@/context/UserContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -116,19 +117,23 @@ export default function CreateBot() {
   };
 
   const { addBot } = useBots();
+  const { currentUser } = useAuth();
 
   const handleCreate = () => {
-    addBot({
-      name: botName,
-      description: botDesc,
-      welcomeMessage: welcomeMsg,
-      model: selectedModel,
-      status: enableOnCreate ? 'live' : 'draft',
-      accentColor: accentColor,
-      avatar: selectedAvatar,
-      darkTheme: darkTheme,
-      widgetPosition: widgetPosition,
-    });
+    addBot(
+      {
+        name: botName,
+        description: botDesc,
+        welcomeMessage: welcomeMsg,
+        model: selectedModel,
+        status: enableOnCreate ? 'live' : 'draft',
+        accentColor: accentColor,
+        avatar: selectedAvatar,
+        darkTheme: darkTheme,
+        widgetPosition: widgetPosition,
+      },
+      currentUser?.id || 'unknown'
+    );
     navigate('/dashboard');
   };
 

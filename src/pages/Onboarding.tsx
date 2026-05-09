@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useBots } from '@/context/BotContext';
+import { useAuth } from '@/context/UserContext';
 
 const steps = [
   { id: 1, label: 'Name Your Bot', icon: Bot },
@@ -38,6 +39,7 @@ const colorOptions = ['#2E5BFF', '#7C3AED', '#10B981', '#F59E0B', '#EC4899', '#0
 export default function Onboarding() {
   const navigate = useNavigate();
   const { addBot } = useBots();
+  const { currentUser } = useAuth();
   const [step, setStep] = useState(1);
   const [botName, setBotName] = useState('');
   const [description, setDescription] = useState('');
@@ -46,28 +48,24 @@ export default function Onboarding() {
   const [trainingContent, setTrainingContent] = useState('');
   const [color, setColor] = useState(colorOptions[0]);
   const [avatar, setAvatar] = useState('🤖');
-  const [createdBotId, setCreatedBotId] = useState('');
-
   const avatarOptions = ['🤖', '💬', '🧠', '⚡', '✨', '🎯'];
 
   const handleNext = () => {
     if (step === 3) {
-      // Create the bot
-      const id = Math.random().toString(36).substr(2, 9);
-      addBot({
-        name: botName || 'My First Bot',
-        description: description || 'AI chatbot assistant',
-        welcomeMessage: `Hi! I'm ${botName || 'your assistant'}. How can I help you?`,
-        model: 'GPT-4 Turbo',
-        status: 'live',
-        accentColor: color,
-        avatar: 0,
-        darkTheme: true,
-        widgetPosition: 'right',
-        initial: (botName || 'MB').substring(0, 2).toUpperCase(),
-        gradient: 'from-bc-accent to-blue-600',
-      });
-      setCreatedBotId(id);
+      addBot(
+        {
+          name: botName || 'My First Bot',
+          description: description || 'AI chatbot assistant',
+          welcomeMessage: `Hi! I'm ${botName || 'your assistant'}. How can I help you?`,
+          model: 'Gemini 1.5 Flash',
+          status: 'live',
+          accentColor: color,
+          avatar: 0,
+          darkTheme: true,
+          widgetPosition: 'right',
+        },
+        currentUser?.id || 'unknown'
+      );
     }
     if (step < 4) setStep(step + 1);
   };

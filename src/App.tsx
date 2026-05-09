@@ -9,13 +9,16 @@ import DataSources from './pages/DataSources';
 import Settings from './pages/Settings';
 import BotManagement from './pages/BotManagement';
 import Login from './pages/Login';
+import Register from './pages/Register';
 import Onboarding from './pages/Onboarding';
+import AdminPanel from './pages/AdminPanel';
 
 export default function App() {
   return (
     <Routes>
       <Route path="/" element={<Home />} />
       <Route path="/login" element={<Login />} />
+      <Route path="/register" element={<Register />} />
       <Route path="/onboarding" element={<Onboarding />} />
       <Route path="/dashboard" element={<DashboardLayout />}>
         <Route index element={<DashboardOverview />} />
@@ -25,6 +28,7 @@ export default function App() {
         <Route path="analytics" element={<Analytics />} />
         <Route path="sources" element={<DataSources />} />
         <Route path="settings" element={<Settings />} />
+        <Route path="admin" element={<AdminPanel />} />
       </Route>
     </Routes>
   );

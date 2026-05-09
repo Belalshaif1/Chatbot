@@ -2,22 +2,31 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import type { Bot } from '../types/bot';
 
 interface BotContextType {
+  // All bots (admin use)
+  allBots: Bot[];
+
+  // Current user's bots (or all if superadmin)
   bots: Bot[];
-  addBot: (bot: Omit<Bot, 'id' | 'createdAt' | 'conversations'>) => void;
+
+  addBot: (bot: Omit<Bot, 'id' | 'createdAt' | 'conversations' | 'userId' | 'initial' | 'gradient'>, userId: string) => Bot;
   updateBot: (id: string, bot: Partial<Bot>) => void;
   deleteBot: (id: string) => void;
+  suspendBot: (id: string) => void;
+  activateBot: (id: string) => void;
   getBot: (id: string) => Bot | undefined;
+  getBotsForUser: (userId: string) => Bot[];
 }
 
 const BotContext = createContext<BotContextType | undefined>(undefined);
 
-const initialBots: Bot[] = [
+const seedBots: Bot[] = [
   {
-    id: '1',
+    id: 'bot-seed-1',
+    userId: 'superadmin-1',
     name: 'Sales Assistant',
     description: 'Help customers with sales queries',
     welcomeMessage: 'Hello! How can I help you today?',
-    model: 'GPT-4 Turbo',
+    model: 'Gemini 1.5 Flash',
     status: 'live',
     conversations: 847,
     initial: 'SA',
@@ -26,14 +35,15 @@ const initialBots: Bot[] = [
     avatar: 0,
     darkTheme: true,
     widgetPosition: 'right',
-    createdAt: new Date().toISOString(),
+    createdAt: new Date(Date.now() - 86400000 * 10).toISOString(),
   },
   {
-    id: '2',
+    id: 'bot-seed-2',
+    userId: 'superadmin-1',
     name: 'Support Bot',
     description: 'Technical support assistant',
     welcomeMessage: 'Welcome to support! How can I assist you?',
-    model: 'Claude 3 Sonnet',
+    model: 'Gemini 1.5 Flash',
     status: 'live',
     conversations: 532,
     initial: 'SB',
@@ -42,44 +52,74 @@ const initialBots: Bot[] = [
     avatar: 1,
     darkTheme: true,
     widgetPosition: 'right',
-    createdAt: new Date().toISOString(),
+    createdAt: new Date(Date.now() - 86400000 * 5).toISOString(),
   },
 ];
 
-export const BotProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [bots, setBots] = useState<Bot[]>(() => {
-    const saved = localStorage.getItem('bc_bots');
-    return saved ? JSON.parse(saved) : initialBots;
+export const BotProvider: React.FC<{ children: React.ReactNode; userId?: string; isSuperAdmin?: boolean }> = ({
+  children,
+  userId,
+  isSuperAdmin,
+}) => {
+  const [allBots, setAllBots] = useState<Bot[]>(() => {
+    const saved = localStorage.getItem('bc_all_bots');
+    if (saved) {
+      const parsed: Bot[] = JSON.parse(saved);
+      // Ensure seed bots exist for superadmin
+      const seedIds = seedBots.map((b) => b.id);
+      const missingSeeds = seedBots.filter((sb) => !parsed.find((b) => b.id === sb.id));
+      return [...parsed.filter((b) => !seedIds.includes(b.id)), ...seedBots, ...missingSeeds];
+    }
+    return seedBots;
   });
 
   useEffect(() => {
-    localStorage.setItem('bc_bots', JSON.stringify(bots));
-  }, [bots]);
+    localStorage.setItem('bc_all_bots', JSON.stringify(allBots));
+  }, [allBots]);
 
-  const addBot = (botData: Omit<Bot, 'id' | 'createdAt' | 'conversations'>) => {
+  // Filtered bots for current session
+  const bots = isSuperAdmin
+    ? allBots
+    : allBots.filter((b) => b.userId === userId && b.status !== 'suspended');
+
+  const getBotsForUser = (uid: string) => allBots.filter((b) => b.userId === uid);
+
+  const addBot = (botData: Omit<Bot, 'id' | 'createdAt' | 'conversations' | 'userId' | 'initial' | 'gradient'>, uid: string): Bot => {
     const newBot: Bot = {
       ...botData,
-      id: Math.random().toString(36).substr(2, 9),
+      userId: uid,
+      id: 'bot-' + Math.random().toString(36).substr(2, 9),
       createdAt: new Date().toISOString(),
       conversations: 0,
       initial: botData.name.substring(0, 2).toUpperCase(),
-      gradient: 'from-bc-accent to-blue-600', // Default gradient
+      gradient: 'from-bc-accent to-blue-600',
     };
-    setBots((prev) => [...prev, newBot]);
+    setAllBots((prev) => [...prev, newBot]);
+    return newBot;
   };
 
   const updateBot = (id: string, botData: Partial<Bot>) => {
-    setBots((prev) => prev.map((b) => (b.id === id ? { ...b, ...botData } : b)));
+    setAllBots((prev) => prev.map((b) => (b.id === id ? { ...b, ...botData } : b)));
   };
 
   const deleteBot = (id: string) => {
-    setBots((prev) => prev.filter((b) => b.id !== id));
+    setAllBots((prev) => prev.filter((b) => b.id !== id));
   };
 
-  const getBot = (id: string) => bots.find((b) => b.id === id);
+  const suspendBot = (id: string) => {
+    setAllBots((prev) => prev.map((b) => (b.id === id ? { ...b, status: 'suspended' } : b)));
+  };
+
+  const activateBot = (id: string) => {
+    setAllBots((prev) => prev.map((b) => (b.id === id ? { ...b, status: 'live' } : b)));
+  };
+
+  const getBot = (id: string) => allBots.find((b) => b.id === id);
 
   return (
-    <BotContext.Provider value={{ bots, addBot, updateBot, deleteBot, getBot }}>
+    <BotContext.Provider
+      value={{ allBots, bots, addBot, updateBot, deleteBot, suspendBot, activateBot, getBot, getBotsForUser }}
+    >
       {children}
     </BotContext.Provider>
   );
@@ -87,8 +127,6 @@ export const BotProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
 export const useBots = () => {
   const context = useContext(BotContext);
-  if (context === undefined) {
-    throw new Error('useBots must be used within a BotProvider');
-  }
+  if (!context) throw new Error('useBots must be used within a BotProvider');
   return context;
 };

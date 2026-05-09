@@ -120,11 +120,11 @@ function AnimatedNumber({ value, duration = 1000 }: { value: number; duration?: 
 }
 
 import { useBots } from '@/context/BotContext';
-import { useUser } from '@/context/UserContext';
+import { useAuth } from '@/context/UserContext';
 
 export default function DashboardOverview() {
   const { bots } = useBots();
-  const { isAdmin } = useUser();
+  const { isSuperAdmin } = useAuth();
   const cardsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -156,7 +156,7 @@ export default function DashboardOverview() {
     <div ref={cardsRef} className="space-y-6">
       <div className="flex items-center gap-3">
         <p className="text-bc-text-secondary">Welcome back, overview of your chatbots</p>
-        {isAdmin && (
+        {isSuperAdmin && (
           <span className="bg-bc-accent/10 text-bc-accent text-[10px] font-bold px-2 py-0.5 rounded-full border border-bc-accent/20">
             ADMIN VIEW
           </span>

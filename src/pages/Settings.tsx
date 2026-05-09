@@ -54,10 +54,10 @@ const teamMembers = [
 
 const accentColors = ['#2E5BFF', '#7C3AED', '#10B981', '#F59E0B', '#EC4899', '#06B6D4'];
 
-import { useUser } from '@/context/UserContext';
+import { useAuth } from '@/context/UserContext';
 
 export default function Settings() {
-  const { user } = useUser();
+  const { currentUser } = useAuth();
   const [activeTab, setActiveTab] = useState('account');
   const [showPassword, setShowPassword] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -104,7 +104,7 @@ export default function Settings() {
                 <div className="flex items-center gap-4">
                   <div className="w-16 h-16 rounded-full bg-bc-accent/20 flex items-center justify-center">
                     <span className="text-xl font-bold text-bc-accent">
-                      {user?.name?.substring(0, 2).toUpperCase() || 'AD'}
+                    {currentUser?.name?.substring(0, 2).toUpperCase() || 'AD'}
                     </span>
                   </div>
                   <Button
@@ -119,14 +119,14 @@ export default function Settings() {
                   <div className="space-y-2">
                     <Label className="text-bc-text-secondary text-[13px]">Full Name</Label>
                     <Input
-                      defaultValue={user?.name || ''}
+                      defaultValue={currentUser?.name || ''}
                       className="bg-bc-surface-light border-bc-border text-bc-text"
                     />
                   </div>
                   <div className="space-y-2">
                     <Label className="text-bc-text-secondary text-[13px]">Email</Label>
                     <Input
-                      defaultValue={user?.email || ''}
+                      defaultValue={currentUser?.email || ''}
                       className="bg-bc-surface-light border-bc-border text-bc-text"
                     />
                   </div>
