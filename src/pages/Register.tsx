@@ -17,25 +17,8 @@ export default function Register() {
 
   const [form, setForm] = useState({ name: '', email: '', password: '', confirmPassword: '' });
   const [showPassword, setShowPassword] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState('');
-
-  const passwordStrength = (pw: string) => {
-    if (pw.length === 0) return 0;
-    let score = 0;
-    if (pw.length >= 8) score++;
-    if (/[A-Z]/.test(pw)) score++;
-    if (/[0-9]/.test(pw)) score++;
-    if (/[^A-Za-z0-9]/.test(pw)) score++;
-    return score;
-  };
-
-  const strength = passwordStrength(form.password);
-  const strengthLabels = [
-    '', t.register.strength.weak, t.register.strength.fair,
-    t.register.strength.good, t.register.strength.strong,
-  ];
-  const strengthColor = ['', 'bg-bc-error', 'bg-bc-warning', 'bg-blue-500', 'bg-bc-success'];
+  const [step, setStep] = useState<'register' | 'otp'>('register');
+  const [otp, setOtp] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -47,10 +30,32 @@ export default function Register() {
     setIsLoading(true);
     try {
       const result = await register(form.name, form.email, form.password);
-      if (result.ok) navigate('/dashboard');
-      else setError(result.message);
+      if (result.ok) {
+        setStep('otp');
+      } else {
+        setError(result.message);
+      }
     } catch (err) {
       setError('An unexpected error occurred. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const { verifyOTP } = useAuth();
+  const handleVerifyOTP = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setIsLoading(true);
+    try {
+      const result = await verifyOTP(form.email, otp, 'signup');
+      if (result.ok) {
+        navigate('/dashboard');
+      } else {
+        setError(result.message);
+      }
+    } catch (err) {
+      setError('Invalid code. Please check your email and try again.');
     } finally {
       setIsLoading(false);
     }
@@ -79,131 +84,184 @@ export default function Register() {
             BotCraft<span className="text-bc-accent">AI</span>
           </h1>
           <p className="text-bc-text-secondary mt-2 text-center max-w-[320px] text-sm">
-            {t.register.subtitle}
+            {step === 'register' ? t.register.subtitle : 'Enter the verification code sent to ' + form.email}
           </p>
         </div>
 
         <div className="bg-bc-surface border border-bc-border rounded-2xl p-8 shadow-card">
-          <form onSubmit={handleSubmit} className="space-y-5">
-            {/* Name */}
-            <div className="space-y-2">
-              <Label htmlFor="name" className={`text-[13px] font-medium text-bc-text-secondary ${isRTL ? 'mr-1' : 'ml-1'}`}>
-                {t.register.fullName}
-              </Label>
-              <div className="relative">
-                <User className={`absolute ${isRTL ? 'right-3.5' : 'left-3.5'} top-1/2 -translate-y-1/2 w-4 h-4 text-bc-text-muted`} />
-                <Input
-                  id="name" type="text"
-                  placeholder={t.register.fullNamePlaceholder}
-                  required value={form.name}
-                  onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  className={`${isRTL ? 'pr-11 text-right' : 'pl-11'} bg-bc-surface-light border-bc-border text-bc-text placeholder:text-bc-text-muted h-12 rounded-xl`}
-                />
-              </div>
-            </div>
-
-            {/* Email */}
-            <div className="space-y-2">
-              <Label htmlFor="reg-email" className={`text-[13px] font-medium text-bc-text-secondary ${isRTL ? 'mr-1' : 'ml-1'}`}>
-                {t.register.email}
-              </Label>
-              <div className="relative">
-                <Mail className={`absolute ${isRTL ? 'right-3.5' : 'left-3.5'} top-1/2 -translate-y-1/2 w-4 h-4 text-bc-text-muted`} />
-                <Input
-                  id="reg-email" type="email"
-                  placeholder={t.register.emailPlaceholder}
-                  required value={form.email}
-                  onChange={(e) => setForm({ ...form, email: e.target.value })}
-                  className={`${isRTL ? 'pr-11 text-right' : 'pl-11'} bg-bc-surface-light border-bc-border text-bc-text placeholder:text-bc-text-muted h-12 rounded-xl`}
-                />
-              </div>
-            </div>
-
-            {/* Password */}
-            <div className="space-y-2">
-              <Label htmlFor="reg-password" className={`text-[13px] font-medium text-bc-text-secondary ${isRTL ? 'mr-1' : 'ml-1'}`}>
-                {t.register.password}
-              </Label>
-              <div className="relative">
-                <Lock className={`absolute ${isRTL ? 'right-3.5' : 'left-3.5'} top-1/2 -translate-y-1/2 w-4 h-4 text-bc-text-muted`} />
-                <Input
-                  id="reg-password"
-                  type={showPassword ? 'text' : 'password'}
-                  placeholder={t.register.passwordPlaceholder}
-                  required value={form.password}
-                  onChange={(e) => setForm({ ...form, password: e.target.value })}
-                  className={`${isRTL ? 'pr-11 pl-11 text-right' : 'pl-11 pr-11'} bg-bc-surface-light border-bc-border text-bc-text placeholder:text-bc-text-muted h-12 rounded-xl`}
-                />
-                <button type="button" onClick={() => setShowPassword(!showPassword)}
-                  className={`absolute ${isRTL ? 'left-3.5' : 'right-3.5'} top-1/2 -translate-y-1/2 text-bc-text-muted hover:text-bc-text`}>
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-              {form.password.length > 0 && (
-                <div className="space-y-1 mt-2">
-                  <div className="flex gap-1">
-                    {[1, 2, 3, 4].map((i) => (
-                      <div key={i} className={`h-1 flex-1 rounded-full transition-all duration-300 ${i <= strength ? strengthColor[strength] : 'bg-bc-surface-light'}`} />
-                    ))}
-                  </div>
-                  <p className={`text-[11px] font-medium ${strength >= 3 ? 'text-bc-success' : strength >= 2 ? 'text-blue-400' : 'text-bc-warning'}`}>
-                    {strengthLabels[strength]}
-                  </p>
+          {step === 'register' ? (
+            <form onSubmit={handleSubmit} className="space-y-5">
+              {/* Name */}
+              <div className="space-y-2">
+                <Label htmlFor="name" className={`text-[13px] font-medium text-bc-text-secondary ${isRTL ? 'mr-1' : 'ml-1'}`}>
+                  {t.register.fullName}
+                </Label>
+                <div className="relative">
+                  <User className={`absolute ${isRTL ? 'right-3.5' : 'left-3.5'} top-1/2 -translate-y-1/2 w-4 h-4 text-bc-text-muted`} />
+                  <Input
+                    id="name" type="text"
+                    placeholder={t.register.fullNamePlaceholder}
+                    required value={form.name}
+                    onChange={(e) => setForm({ ...form, name: e.target.value })}
+                    className={`${isRTL ? 'pr-11 text-right' : 'pl-11'} bg-bc-surface-light border-bc-border text-bc-text placeholder:text-bc-text-muted h-12 rounded-xl`}
+                  />
                 </div>
-              )}
-            </div>
+              </div>
 
-            {/* Confirm */}
-            <div className="space-y-2">
-              <Label htmlFor="confirm" className={`text-[13px] font-medium text-bc-text-secondary ${isRTL ? 'mr-1' : 'ml-1'}`}>
-                {t.register.confirmPassword}
-              </Label>
-              <div className="relative">
-                <Lock className={`absolute ${isRTL ? 'right-3.5' : 'left-3.5'} top-1/2 -translate-y-1/2 w-4 h-4 text-bc-text-muted`} />
-                <Input
-                  id="confirm"
-                  type={showPassword ? 'text' : 'password'}
-                  placeholder={t.register.confirmPlaceholder}
-                  required value={form.confirmPassword}
-                  onChange={(e) => setForm({ ...form, confirmPassword: e.target.value })}
-                  className={`${isRTL ? 'pr-11 text-right' : 'pl-11'} bg-bc-surface-light border-bc-border text-bc-text placeholder:text-bc-text-muted h-12 rounded-xl ${
-                    form.confirmPassword && form.password !== form.confirmPassword ? 'border-bc-error' :
-                    form.confirmPassword && form.password === form.confirmPassword ? 'border-bc-success' : ''
-                  }`}
-                />
-                {form.confirmPassword && form.password === form.confirmPassword && (
-                  <CheckCircle2 className={`absolute ${isRTL ? 'left-3.5' : 'right-3.5'} top-1/2 -translate-y-1/2 w-4 h-4 text-bc-success`} />
+              {/* Email */}
+              <div className="space-y-2">
+                <Label htmlFor="reg-email" className={`text-[13px] font-medium text-bc-text-secondary ${isRTL ? 'mr-1' : 'ml-1'}`}>
+                  {t.register.email}
+                </Label>
+                <div className="relative">
+                  <Mail className={`absolute ${isRTL ? 'right-3.5' : 'left-3.5'} top-1/2 -translate-y-1/2 w-4 h-4 text-bc-text-muted`} />
+                  <Input
+                    id="reg-email" type="email"
+                    placeholder={t.register.emailPlaceholder}
+                    required value={form.email}
+                    onChange={(e) => setForm({ ...form, email: e.target.value })}
+                    className={`${isRTL ? 'pr-11 text-right' : 'pl-11'} bg-bc-surface-light border-bc-border text-bc-text placeholder:text-bc-text-muted h-12 rounded-xl`}
+                  />
+                </div>
+              </div>
+
+              {/* Password */}
+              <div className="space-y-2">
+                <Label htmlFor="reg-password" className={`text-[13px] font-medium text-bc-text-secondary ${isRTL ? 'mr-1' : 'ml-1'}`}>
+                  {t.register.password}
+                </Label>
+                <div className="relative">
+                  <Lock className={`absolute ${isRTL ? 'right-3.5' : 'left-3.5'} top-1/2 -translate-y-1/2 w-4 h-4 text-bc-text-muted`} />
+                  <Input
+                    id="reg-password"
+                    type={showPassword ? 'text' : 'password'}
+                    placeholder={t.register.passwordPlaceholder}
+                    required value={form.password}
+                    onChange={(e) => setForm({ ...form, password: e.target.value })}
+                    className={`${isRTL ? 'pr-11 pl-11 text-right' : 'pl-11 pr-11'} bg-bc-surface-light border-bc-border text-bc-text placeholder:text-bc-text-muted h-12 rounded-xl`}
+                  />
+                  <button type="button" onClick={() => setShowPassword(!showPassword)}
+                    className={`absolute ${isRTL ? 'left-3.5' : 'right-3.5'} top-1/2 -translate-y-1/2 text-bc-text-muted hover:text-bc-text`}>
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                {form.password.length > 0 && (
+                  <div className="space-y-1 mt-2">
+                    <div className="flex gap-1">
+                      {[1, 2, 3, 4].map((i) => (
+                        <div key={i} className={`h-1 flex-1 rounded-full transition-all duration-300 ${i <= strength ? strengthColor[strength] : 'bg-bc-surface-light'}`} />
+                      ))}
+                    </div>
+                    <p className={`text-[11px] font-medium ${strength >= 3 ? 'text-bc-success' : strength >= 2 ? 'text-blue-400' : 'text-bc-warning'}`}>
+                      {strengthLabels[strength]}
+                    </p>
+                  </div>
                 )}
               </div>
-            </div>
 
-            {error && (
-              <div className="bg-bc-error/10 border border-bc-error/30 rounded-xl px-4 py-3">
-                <p className="text-[13px] text-bc-error">{error}</p>
+              {/* Confirm */}
+              <div className="space-y-2">
+                <Label htmlFor="confirm" className={`text-[13px] font-medium text-bc-text-secondary ${isRTL ? 'mr-1' : 'ml-1'}`}>
+                  {t.register.confirmPassword}
+                </Label>
+                <div className="relative">
+                  <Lock className={`absolute ${isRTL ? 'right-3.5' : 'left-3.5'} top-1/2 -translate-y-1/2 w-4 h-4 text-bc-text-muted`} />
+                  <Input
+                    id="confirm"
+                    type={showPassword ? 'text' : 'password'}
+                    placeholder={t.register.confirmPlaceholder}
+                    required value={form.confirmPassword}
+                    onChange={(e) => setForm({ ...form, confirmPassword: e.target.value })}
+                    className={`${isRTL ? 'pr-11 text-right' : 'pl-11'} bg-bc-surface-light border-bc-border text-bc-text placeholder:text-bc-text-muted h-12 rounded-xl ${
+                      form.confirmPassword && form.password !== form.confirmPassword ? 'border-bc-error' :
+                      form.confirmPassword && form.password === form.confirmPassword ? 'border-bc-success' : ''
+                    }`}
+                  />
+                  {form.confirmPassword && form.password === form.confirmPassword && (
+                    <CheckCircle2 className={`absolute ${isRTL ? 'left-3.5' : 'right-3.5'} top-1/2 -translate-y-1/2 w-4 h-4 text-bc-success`} />
+                  )}
+                </div>
               </div>
-            )}
 
-            <Button
-              type="submit" disabled={isLoading}
-              className="w-full bg-bc-accent hover:bg-bc-accent-hover text-white h-12 rounded-xl font-semibold shadow-glow group transition-all"
-            >
-              {isLoading ? (
-                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              ) : (
-                <span className={`flex items-center gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
-                  {t.register.createAccount}
-                  <ArrowRight className={`w-4 h-4 group-hover:translate-x-1 transition-transform ${isRTL ? 'rotate-180' : ''}`} />
-                </span>
+              {error && (
+                <div className="bg-bc-error/10 border border-bc-error/30 rounded-xl px-4 py-3">
+                  <p className="text-[13px] text-bc-error">{error}</p>
+                </div>
               )}
-            </Button>
 
-            <p className="text-[11px] text-bc-text-muted text-center leading-relaxed">
-              {t.register.termsPrefix}{' '}
-              <Link to="#" className="text-bc-accent hover:underline">{t.register.terms}</Link>{' '}
-              {t.register.and}{' '}
-              <Link to="#" className="text-bc-accent hover:underline">{t.register.privacy}</Link>.
-            </p>
-          </form>
+              <Button
+                type="submit" disabled={isLoading}
+                className="w-full bg-bc-accent hover:bg-bc-accent-hover text-white h-12 rounded-xl font-semibold shadow-glow group transition-all"
+              >
+                {isLoading ? (
+                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                ) : (
+                  <span className={`flex items-center gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
+                    {t.register.createAccount}
+                    <ArrowRight className={`w-4 h-4 group-hover:translate-x-1 transition-transform ${isRTL ? 'rotate-180' : ''}`} />
+                  </span>
+                )}
+              </Button>
+
+              <p className="text-[11px] text-bc-text-muted text-center leading-relaxed">
+                {t.register.termsPrefix}{' '}
+                <Link to="#" className="text-bc-accent hover:underline">{t.register.terms}</Link>{' '}
+                {t.register.and}{' '}
+                <Link to="#" className="text-bc-accent hover:underline">{t.register.privacy}</Link>.
+              </p>
+            </form>
+          ) : (
+            <form onSubmit={handleVerifyOTP} className="space-y-6">
+              <div className="space-y-4">
+                <div className="flex justify-center">
+                  <div className="w-12 h-12 rounded-xl bg-bc-accent/10 flex items-center justify-center">
+                    <ShieldCheck className="w-6 h-6 text-bc-accent" />
+                  </div>
+                </div>
+                <div className="text-center">
+                  <Label className="text-sm font-medium text-bc-text-secondary">
+                    Verification Code
+                  </Label>
+                  <Input
+                    type="text"
+                    maxLength={6}
+                    placeholder="000000"
+                    required
+                    value={otp}
+                    onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
+                    className="mt-3 text-center text-2xl tracking-[0.5em] font-bold h-14 bg-bc-surface-light border-bc-border text-bc-accent placeholder:text-bc-text-muted rounded-xl focus:ring-bc-accent"
+                  />
+                </div>
+              </div>
+
+              {error && (
+                <div className="bg-bc-error/10 border border-bc-error/30 rounded-xl px-4 py-3">
+                  <p className="text-[13px] text-bc-error">{error}</p>
+                </div>
+              )}
+
+              <Button
+                type="submit" disabled={isLoading}
+                className="w-full bg-bc-accent hover:bg-bc-accent-hover text-white h-12 rounded-xl font-semibold shadow-glow transition-all"
+              >
+                {isLoading ? (
+                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                ) : (
+                  'Verify & Start'
+                )}
+              </Button>
+
+              <div className="text-center">
+                <button
+                  type="button"
+                  onClick={() => setStep('register')}
+                  className="text-[13px] text-bc-text-muted hover:text-bc-accent"
+                >
+                  ← Back to registration
+                </button>
+              </div>
+            </form>
+          )}
 
           <div className="mt-6 pt-6 border-t border-bc-border text-center">
             <p className="text-[13px] text-bc-text-muted">

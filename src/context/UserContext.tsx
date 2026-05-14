@@ -32,6 +32,7 @@ interface AuthContextType {
   register: (name: string, email: string, password: string) => Promise<{ ok: boolean; message: string }>;
   logout: () => Promise<void>;
   forgotPassword: (email: string) => Promise<{ ok: boolean; message: string }>;
+  verifyOTP: (email: string, token: string, type: 'signup' | 'recovery') => Promise<{ ok: boolean; message: string }>;
   updatePassword: (password: string) => Promise<{ ok: boolean; message: string }>;
 
   // Admin: user management
@@ -168,7 +169,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       };
       setAllUsers((prev) => [...prev, newUser]);
       
-      return { ok: true, message: 'Registration successful! Please check your email for a verification link.' };
+      return { ok: true, message: 'Registration successful! Please enter the 6-digit code sent to your email.' };
     }
 
     // Fallback: Local Auth (auto-login)
@@ -202,6 +203,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
       if (error) return { ok: false, message: error.message };
       return { ok: true, message: 'Check your email for the reset link!' };
+    }
+    return { ok: false, message: 'Supabase is not configured.' };
+  };
+
+  const verifyOTP = async (email: string, token: string, type: 'signup' | 'recovery'): Promise<{ ok: boolean; message: string }> => {
+    if (isSupabaseConfigured()) {
+      const { error } = await supabase.auth.verifyOtp({
+        email,
+        token,
+        type: type === 'signup' ? 'signup' : 'recovery',
+      });
+      if (error) return { ok: false, message: error.message };
+      return { ok: true, message: 'Verification successful!' };
     }
     return { ok: false, message: 'Supabase is not configured.' };
   };
@@ -244,6 +258,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         register,
         logout,
         forgotPassword,
+        verifyOTP,
         updatePassword,
         suspendUser,
         activateUser,
