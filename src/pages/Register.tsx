@@ -19,6 +19,25 @@ export default function Register() {
   const [showPassword, setShowPassword] = useState(false);
   const [step, setStep] = useState<'register' | 'otp'>('register');
   const [otp, setOtp] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const passwordStrength = (pw: string) => {
+    if (pw.length === 0) return 0;
+    let score = 0;
+    if (pw.length >= 8) score++;
+    if (/[A-Z]/.test(pw)) score++;
+    if (/[0-9]/.test(pw)) score++;
+    if (/[^A-Za-z0-9]/.test(pw)) score++;
+    return score;
+  };
+
+  const strength = passwordStrength(form.password);
+  const strengthLabels = [
+    '', t.register.strength.weak, t.register.strength.fair,
+    t.register.strength.good, t.register.strength.strong,
+  ];
+  const strengthColor = ['', 'bg-bc-error', 'bg-bc-warning', 'bg-blue-500', 'bg-bc-success'];
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
