@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Bot, Send, X, Palette, MessageSquare } from 'lucide-react';
+import { Send, X, Palette, MessageSquare } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';

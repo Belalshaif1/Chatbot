@@ -10,11 +10,13 @@ import {
   CheckCircle2,
   Loader2,
   File,
+  Database,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useSources } from '@/context/SourceContext';
+import { extractTextFromFile, extractTextFromUrl, formatFileSize } from '@/lib/extractor';
 
 interface QAPair {
   question: string;
@@ -24,18 +26,20 @@ interface QAPair {
 interface AddSourceModalProps {
   open: boolean;
   onClose: () => void;
+  botId: string;
 }
 
-type TabType = 'file' | 'website' | 'text' | 'qa';
+type TabType = 'file' | 'website' | 'text' | 'qa' | 'database';
 
 const tabs: { id: TabType; label: string; icon: typeof Upload; desc: string }[] = [
   { id: 'file', label: 'Files', icon: Upload, desc: 'PDF, DOCX, TXT, CSV' },
   { id: 'website', label: 'Website', icon: Globe, desc: 'Crawl any URL' },
   { id: 'text', label: 'Text', icon: FileText, desc: 'Paste raw content' },
   { id: 'qa', label: 'Q&A', icon: HelpCircle, desc: 'Custom pairs' },
+  { id: 'database', label: 'Database', icon: Database, desc: 'SQL / CSV Import' },
 ];
 
-export default function AddSourceModal({ open, onClose }: AddSourceModalProps) {
+export default function AddSourceModal({ open, onClose, botId }: AddSourceModalProps) {
   const { addSource } = useSources();
   const [activeTab, setActiveTab] = useState<TabType>('file');
   const [isProcessing, setIsProcessing] = useState(false);
@@ -68,37 +72,52 @@ export default function AddSourceModal({ open, onClose }: AddSourceModalProps) {
     setQaPairs((prev) => prev.filter((_, idx) => idx !== i));
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
+    if (!botId) return;
     setIsProcessing(true);
-    const delay = activeTab === 'file' ? 3000 : activeTab === 'website' ? 4000 : 2000;
 
-    setTimeout(() => {
+    try {
+      let content = '';
+      let name = '';
+      let type: 'file' | 'website' | 'text' | 'qa' = 'text';
+      let sizeLabel = '';
+
       if (activeTab === 'file' && selectedFile) {
-        addSource({
-          name: selectedFile.name,
-          type: selectedFile.name.endsWith('.pdf')
-            ? 'pdf'
-            : selectedFile.name.endsWith('.csv')
-            ? 'csv'
-            : 'doc',
-          size: `${(selectedFile.size / 1024 / 1024).toFixed(1)} MB`,
-          bots: [],
-        });
-      } else if (activeTab === 'website') {
-        addSource({ name: url, type: 'website', bots: [] });
-      } else if (activeTab === 'text') {
-        addSource({
-          name: `Text Content (${textContent.length} chars)`,
-          type: 'doc',
-          bots: [],
-        });
+        name = selectedFile.name;
+        type = 'file';
+        content = await extractTextFromFile(selectedFile);
+        sizeLabel = formatFileSize(selectedFile.size);
+      } else if (activeTab === 'website' && url) {
+        name = url;
+        type = 'website';
+        content = await extractTextFromUrl(url);
+        sizeLabel = 'URL';
+      } else if (activeTab === 'text' && textContent) {
+        name = `Text Content (${new Date().toLocaleDateString()})`;
+        type = 'text';
+        content = textContent;
+        sizeLabel = formatFileSize(textContent.length);
       } else if (activeTab === 'qa') {
-        addSource({
-          name: `Q&A Set (${qaPairs.length} pairs)`,
-          type: 'doc',
-          bots: [],
-        });
+        name = `Q&A Set (${qaPairs.length} pairs)`;
+        type = 'qa';
+        content = qaPairs.map((p) => `Q: ${p.question}\nA: ${p.answer}`).join('\n\n');
+        sizeLabel = `${qaPairs.length} pairs`;
+      } else if (activeTab === 'database') {
+        name = `Database Import (${new Date().toLocaleDateString()})`;
+        type = 'text'; 
+        content = textContent; 
+        sizeLabel = 'Database';
       }
+
+      await addSource({
+        botId,
+        name,
+        type,
+        content,
+        sizeLabel,
+        charCount: content.length,
+        status: 'ready',
+      });
 
       setIsProcessing(false);
       setIsDone(true);
@@ -110,7 +129,11 @@ export default function AddSourceModal({ open, onClose }: AddSourceModalProps) {
         setQaPairs([{ question: '', answer: '' }]);
         onClose();
       }, 1500);
-    }, delay);
+    } catch (error) {
+      console.error('Extraction failed:', error);
+      setIsProcessing(false);
+      // In a real app, you'd show an error state to the user
+    }
   };
 
   const canSubmit =
@@ -360,6 +383,37 @@ export default function AddSourceModal({ open, onClose }: AddSourceModalProps) {
                 <Plus className="w-4 h-4" />
                 Add another pair
               </button>
+            </div>
+          )}
+
+          {/* Database Import */}
+          {activeTab === 'database' && (
+            <div className="space-y-4">
+              <div className="p-4 bg-bc-accent/5 border border-bc-accent/20 rounded-xl">
+                <div className="flex items-start gap-3">
+                  <Database className="w-5 h-5 text-bc-accent shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-semibold text-bc-text">Database Training</p>
+                    <p className="text-[12px] text-bc-text-muted mt-0.5">
+                      Paste your SQL dump or CSV data below. We'll extract the text and train your bot on the records.
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-bc-text-secondary text-[13px]">SQL or CSV Data</Label>
+                <textarea
+                  value={textContent}
+                  onChange={(e) => setTextContent(e.target.value)}
+                  placeholder="CREATE TABLE users ... OR row1,row2,row3..."
+                  rows={8}
+                  className="w-full bg-bc-surface-light border border-bc-border rounded-xl p-4 text-[13px] text-bc-text placeholder:text-bc-text-muted resize-none focus:outline-none focus:ring-2 focus:ring-bc-accent/30 font-mono"
+                />
+              </div>
+              <div className="flex items-center gap-3 p-3 bg-bc-surface-light rounded-lg border border-bc-border">
+                <input type="checkbox" className="w-4 h-4 rounded border-bc-border" />
+                <span className="text-[12px] text-bc-text-secondary">Automatically sanitize PII (emails, phone numbers) from data</span>
+              </div>
             </div>
           )}
         </div>

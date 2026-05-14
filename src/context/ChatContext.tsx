@@ -23,6 +23,8 @@ interface ChatContextType {
   createConversation: (botId: string) => Conversation;
   addMessage: (conversationId: string, message: Omit<Message, 'id'>) => void;
   deleteConversation: (conversationId: string) => void;
+  clearMessages: (conversationId: string) => void;
+  deleteMessage: (conversationId: string, messageId: string) => void;
 }
 
 const ChatContext = createContext<ChatContextType | undefined>(undefined);
@@ -90,9 +92,42 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setConversations((prev) => prev.filter((c) => c.id !== conversationId));
   };
 
+  const clearMessages = (conversationId: string) => {
+    setConversations((prev) =>
+      prev.map((c) => {
+        if (c.id !== conversationId) return c;
+        return {
+          ...c,
+          messages: [
+            {
+              id: 'sys-' + Date.now(),
+              type: 'system',
+              content: 'Chat cleared',
+              timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            },
+          ],
+          updatedAt: new Date().toISOString(),
+        };
+      })
+    );
+  };
+
+  const deleteMessage = (conversationId: string, messageId: string) => {
+    setConversations((prev) =>
+      prev.map((c) => {
+        if (c.id !== conversationId) return c;
+        return {
+          ...c,
+          messages: c.messages.filter((m) => m.id !== messageId),
+          updatedAt: new Date().toISOString(),
+        };
+      })
+    );
+  };
+
   return (
     <ChatContext.Provider
-      value={{ conversations, getConversationsForBot, createConversation, addMessage, deleteConversation }}
+      value={{ conversations, getConversationsForBot, createConversation, addMessage, deleteConversation, clearMessages, deleteMessage }}
     >
       {children}
     </ChatContext.Provider>

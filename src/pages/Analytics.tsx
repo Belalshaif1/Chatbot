@@ -5,7 +5,6 @@ import {
   ThumbsUp,
   Clock,
   AlertCircle,
-  ChevronDown,
   Search,
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';

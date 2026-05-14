@@ -119,8 +119,8 @@ export default function CreateBot() {
   const { addBot } = useBots();
   const { currentUser } = useAuth();
 
-  const handleCreate = () => {
-    addBot(
+  const handleCreate = async () => {
+    await addBot(
       {
         name: botName,
         description: botDesc,

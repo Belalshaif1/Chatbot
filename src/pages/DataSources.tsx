@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import {
-  Upload, Globe, FileText, Plus, Trash2, RefreshCw,
-  CheckCircle2, AlertCircle, Loader2, Database, X,
+  Upload, Globe, FileText, Plus, Trash2,
+  CheckCircle2, AlertCircle, Loader2, Database,
   FileCode, FileSpreadsheet, File, ChevronDown, MessageSquare,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -10,7 +10,6 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useSources } from '@/context/SourceContext';
 import { useBots } from '@/context/BotContext';
-import { useAuth } from '@/context/UserContext';
 import { extractTextFromFile, extractTextFromUrl, formatFileSize, estimateTokens } from '@/lib/extractor';
 
 const FILE_TYPES = ['.pdf', '.txt', '.md', '.csv', '.docx', '.doc', '.html', '.json'];
@@ -28,7 +27,6 @@ type TabId = 'file' | 'website' | 'text' | 'qa';
 export default function DataSources() {
   const { sources, addSource, deleteSource, updateSourceStatus, getSourcesForBot } = useSources();
   const { bots } = useBots();
-  const { currentUser } = useAuth();
 
   const [activeTab, setActiveTab] = useState<TabId>('file');
   const [selectedBotId, setSelectedBotId] = useState<string>('');
@@ -58,7 +56,7 @@ export default function DataSources() {
     setIsProcessing(true);
 
     for (const file of Array.from(files)) {
-      const id = addSource({
+      const id = await addSource({
         botId: selectedBotId,
         name: file.name,
         type: 'file',
@@ -70,9 +68,9 @@ export default function DataSources() {
 
       try {
         const text = await extractTextFromFile(file);
-        updateSourceStatus(id, 'ready', text);
+        await updateSourceStatus(id, 'ready', text);
       } catch (err) {
-        updateSourceStatus(id, 'error', '', String(err));
+        await updateSourceStatus(id, 'error', '', String(err));
       }
     }
     setIsProcessing(false);
@@ -95,7 +93,7 @@ export default function DataSources() {
     const urlStr = url.trim().startsWith('http') ? url.trim() : `https://${url.trim()}`;
 
     setIsProcessing(true);
-    const id = addSource({
+    const id = await addSource({
       botId: selectedBotId,
       name: urlStr,
       type: 'website',
@@ -107,9 +105,9 @@ export default function DataSources() {
 
     try {
       const text = await extractTextFromUrl(urlStr);
-      updateSourceStatus(id, 'ready', text);
+      await updateSourceStatus(id, 'ready', text);
     } catch (err) {
-      updateSourceStatus(id, 'error', '', String(err));
+      await updateSourceStatus(id, 'error', '', String(err));
     }
 
     setUrl('');
@@ -117,9 +115,9 @@ export default function DataSources() {
   };
 
   // ── Custom text ────────────────────────────────────────────
-  const handleAddText = () => {
+  const handleAddText = async () => {
     if (!customText.trim() || !selectedBotId) return;
-    addSource({
+    await addSource({
       botId: selectedBotId,
       name: `Custom Text (${new Date().toLocaleDateString()})`,
       type: 'text',
@@ -132,10 +130,10 @@ export default function DataSources() {
   };
 
   // ── Q&A pair ───────────────────────────────────────────────
-  const handleAddQA = () => {
+  const handleAddQA = async () => {
     if (!qaQuestion.trim() || !qaAnswer.trim() || !selectedBotId) return;
     const content = `Q: ${qaQuestion.trim()}\nA: ${qaAnswer.trim()}`;
-    addSource({
+    await addSource({
       botId: selectedBotId,
       name: `Q&A: ${qaQuestion.trim().slice(0, 50)}`,
       type: 'qa',
@@ -155,8 +153,7 @@ export default function DataSources() {
     { id: 'qa', label: 'Q&A Pairs', icon: MessageSquare },
   ];
 
-  const totalChars = botSources.reduce((a, s) => a + s.charCount, 0);
-  const totalTokens = estimateTokens(totalChars.toString().padEnd(totalChars, 'x'));
+  const totalChars = botSources.reduce((acc, s) => acc + s.charCount, 0);
 
   return (
     <div className="space-y-6 max-w-[900px]">

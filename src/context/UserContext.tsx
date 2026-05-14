@@ -1,5 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import type { Session, AuthChangeEvent } from '@supabase/supabase-js';
 import type { User, AccountStatus } from '../types/bot';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
 // ─── Simple hash (base64) for demo — NOT for production ───
 const hashPassword = (pw: string) => btoa(pw);
@@ -26,9 +28,11 @@ interface AuthContextType {
   isSuperAdmin: boolean;
 
   // Auth
-  login: (email: string, password: string) => { ok: boolean; message: string };
-  register: (name: string, email: string, password: string) => { ok: boolean; message: string };
-  logout: () => void;
+  login: (email: string, password: string) => Promise<{ ok: boolean; message: string }>;
+  register: (name: string, email: string, password: string) => Promise<{ ok: boolean; message: string }>;
+  logout: () => Promise<void>;
+  forgotPassword: (email: string) => Promise<{ ok: boolean; message: string }>;
+  updatePassword: (password: string) => Promise<{ ok: boolean; message: string }>;
 
   // Admin: user management
   suspendUser: (userId: string) => void;
@@ -60,15 +64,45 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Persist users
   useEffect(() => {
-    localStorage.setItem('bc_users', JSON.stringify(allUsers));
+    if (allUsers.length > 0) {
+      localStorage.setItem('bc_users', JSON.stringify(allUsers));
+    }
   }, [allUsers]);
 
-  // Persist session
+  // ── Supabase Session Sync ────────────────────────────────
   useEffect(() => {
-    if (currentUser) {
-      localStorage.setItem('bc_current_user', JSON.stringify(currentUser));
-    } else {
-      localStorage.removeItem('bc_current_user');
+    if (!isSupabaseConfigured()) return;
+
+    // Check current session
+    supabase.auth.getSession().then(({ data: { session } }: { data: { session: Session | null } }) => {
+      if (session?.user) {
+        // Map Supabase user to our User type
+        const user = allUsers.find(u => u.email === session.user.email);
+        if (user) setCurrentUser(user);
+      }
+    });
+
+    // Listen for changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
+      if (session?.user) {
+        const user = allUsers.find(u => u.email === session.user.email);
+        if (user) setCurrentUser(user);
+      } else {
+        setCurrentUser(null);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, [allUsers]);
+
+  // Persist session (for local mode fallback)
+  useEffect(() => {
+    if (!isSupabaseConfigured()) {
+      if (currentUser) {
+        localStorage.setItem('bc_current_user', JSON.stringify(currentUser));
+      } else {
+        localStorage.removeItem('bc_current_user');
+      }
     }
   }, [currentUser]);
 
@@ -83,25 +117,61 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   // ── Auth ──────────────────────────────────────────────────
-  const login = (email: string, password: string): { ok: boolean; message: string } => {
+  const login = async (email: string, password: string): Promise<{ ok: boolean; message: string }> => {
+    if (isSupabaseConfigured()) {
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) return { ok: false, message: error.message };
+
+      const user = allUsers.find((u) => u.email.toLowerCase() === email.toLowerCase());
+      if (user) {
+        if (user.status === 'suspended') {
+          await supabase.auth.signOut();
+          return { ok: false, message: 'Your account has been suspended.' };
+        }
+        setCurrentUser(user);
+      }
+      return { ok: true, message: 'Welcome back!' };
+    }
+
+    // Fallback: Local Auth
     const user = allUsers.find((u) => u.email.toLowerCase() === email.toLowerCase());
     if (!user) return { ok: false, message: 'No account found with this email.' };
     if (!verifyPassword(password, user.password)) return { ok: false, message: 'Incorrect password.' };
-    if (user.status === 'suspended') return { ok: false, message: 'Your account has been suspended. Contact support.' };
-    if (user.status === 'pending') return { ok: false, message: 'Account is pending approval.' };
+    if (user.status === 'suspended') return { ok: false, message: 'Your account has been suspended.' };
 
-    const updated = { ...user, lastLogin: new Date().toISOString() };
-    updateUser(user.id, { lastLogin: updated.lastLogin });
-    setCurrentUser(updated);
+    setCurrentUser(user);
     return { ok: true, message: 'Welcome back!' };
   };
 
-  const register = (name: string, email: string, password: string): { ok: boolean; message: string } => {
-    if (allUsers.find((u) => u.email.toLowerCase() === email.toLowerCase())) {
-      return { ok: false, message: 'An account with this email already exists.' };
+  const register = async (name: string, email: string, password: string): Promise<{ ok: boolean; message: string }> => {
+    if (isSupabaseConfigured()) {
+      const { error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: { data: { full_name: name } }
+      });
+      if (error) return { ok: false, message: error.message };
+      
+      // Add to our local/synced user list (keep status as active for now, 
+      // but they won't be logged in until session syncs after verification)
+      const newUser: User = {
+        id: 'u-' + Math.random().toString(36).substr(2, 9),
+        name: name.trim(),
+        email: email.toLowerCase().trim(),
+        password: hashPassword(password),
+        role: 'user',
+        status: 'active',
+        plan: 'free',
+        createdAt: new Date().toISOString(),
+        lastLogin: new Date().toISOString(),
+        avatarInitials: name.substring(0, 2).toUpperCase(),
+      };
+      setAllUsers((prev) => [...prev, newUser]);
+      
+      return { ok: true, message: 'Registration successful! Please check your email for a verification link.' };
     }
-    if (password.length < 6) return { ok: false, message: 'Password must be at least 6 characters.' };
 
+    // Fallback: Local Auth (auto-login)
     const newUser: User = {
       id: 'u-' + Math.random().toString(36).substr(2, 9),
       name: name.trim(),
@@ -120,7 +190,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return { ok: true, message: 'Account created successfully!' };
   };
 
-  const logout = () => setCurrentUser(null);
+  const logout = async () => {
+    if (isSupabaseConfigured()) await supabase.auth.signOut();
+    setCurrentUser(null);
+  };
+
+  const forgotPassword = async (email: string): Promise<{ ok: boolean; message: string }> => {
+    if (isSupabaseConfigured()) {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+      if (error) return { ok: false, message: error.message };
+      return { ok: true, message: 'Check your email for the reset link!' };
+    }
+    return { ok: false, message: 'Supabase is not configured.' };
+  };
+
+  const updatePassword = async (password: string): Promise<{ ok: boolean; message: string }> => {
+    if (isSupabaseConfigured()) {
+      const { error } = await supabase.auth.updateUser({ password });
+      if (error) return { ok: false, message: error.message };
+      return { ok: true, message: 'Password updated successfully!' };
+    }
+    return { ok: false, message: 'Supabase is not configured.' };
+  };
 
   // ── Admin Actions ─────────────────────────────────────────
   const suspendUser = (userId: string) => {
@@ -150,6 +243,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         login,
         register,
         logout,
+        forgotPassword,
+        updatePassword,
         suspendUser,
         activateUser,
         deleteUser,

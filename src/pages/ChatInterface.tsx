@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { useParams } from 'react-router-dom';
 import {
   Search,
   Plus,
@@ -8,7 +9,6 @@ import {
   Mic,
   Copy,
   ThumbsUp,
-  ThumbsDown,
   MoreVertical,
   CheckCircle2,
   Clock,
@@ -27,6 +27,7 @@ import { useChat, type Conversation } from '@/context/ChatContext';
 import { useBots } from '@/context/BotContext';
 import { useSources } from '@/context/SourceContext';
 import { sendMessageToGemini, hasApiKey, type GeminiMessage } from '@/lib/gemini';
+import { retrieveRelevantPassages, generateLocalAnswer, detectLang } from '@/lib/localRag';
 import ReactMarkdown from 'react-markdown';
 
 const statusOptions = [
@@ -69,15 +70,24 @@ function MarkdownMessage({ content }: { content: string }) {
   );
 }
 
-export default function ChatInterface({ isEmbedded = false, botId }: ChatInterfaceProps) {
-  const { getConversationsForBot, createConversation, addMessage, deleteConversation } = useChat();
-  const { bots, getBot } = useBots();
+export default function ChatInterface({ isEmbedded = false, botId: propBotId }: ChatInterfaceProps) {
+  const { botId: urlBotId } = useParams();
+  const { getConversationsForBot, createConversation, addMessage, deleteConversation, clearMessages, deleteMessage } = useChat();
+  const { bots, getBot, isLoading: botsLoading } = useBots();
   const { getTrainingContext } = useSources();
 
-  // Determine active bot
-  const [activeBotId, setActiveBotId] = useState<string>(
-    botId || bots[0]?.id || ''
-  );
+  // Determine active bot ID from props, URL, or first available bot
+  const [activeBotId, setActiveBotId] = useState<string>(propBotId || urlBotId || '');
+
+  // Sync activeBotId with URL changes or bots loading
+  useEffect(() => {
+    const newId = propBotId || urlBotId;
+    if (newId && newId !== activeBotId) {
+      setActiveBotId(newId);
+    } else if (!activeBotId && bots.length > 0) {
+      setActiveBotId(bots[0].id);
+    }
+  }, [propBotId, urlBotId, bots, activeBotId]);
 
   const activeBot = getBot(activeBotId);
   const botConversations = getConversationsForBot(activeBotId);
@@ -89,13 +99,14 @@ export default function ChatInterface({ isEmbedded = false, botId }: ChatInterfa
   const [mobileListOpen, setMobileListOpen] = useState(false);
   const [copiedMsgId, setCopiedMsgId] = useState<string | null>(null);
   const [likedMsgId, setLikedMsgId] = useState<string | null>(null);
+  const [useLocalOnly, setUseLocalOnly] = useState(true);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Auto-select first conversation or create one
   useEffect(() => {
-    if (activeBotId) {
+    if (activeBotId && !botsLoading) {
       const convs = getConversationsForBot(activeBotId);
       if (convs.length === 0) {
         const newConv = createConversation(activeBotId);
@@ -105,12 +116,22 @@ export default function ChatInterface({ isEmbedded = false, botId }: ChatInterfa
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeBotId]);
+  }, [activeBotId, botsLoading]);
 
   // Scroll to bottom on new messages
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [selectedConvId, isTyping, botConversations]);
+
+  // Loading state for shared links
+  if (botsLoading && activeBotId && !activeBot) {
+    return (
+      <div className="min-h-screen bg-bc-bg flex flex-col items-center justify-center gap-4">
+        <div className="w-12 h-12 border-4 border-bc-accent/20 border-t-bc-accent rounded-full animate-spin" />
+        <p className="text-bc-text-secondary animate-pulse">Loading Assistant...</p>
+      </div>
+    );
+  }
 
   const selectedConv: Conversation | undefined = botConversations.find((c) => c.id === selectedConvId);
 
@@ -129,13 +150,12 @@ export default function ChatInterface({ isEmbedded = false, botId }: ChatInterfa
       }));
   };
 
-  const getSystemPrompt = () => {
-    if (!activeBot) return 'You are a helpful AI assistant.';
-    const hasData = getTrainingContext(activeBotId).length > 50;
+  const getSystemPrompt = (hasData: boolean) => {
+    const botName = activeBot?.name || 'AI Assistant';
+    const botPrompt = activeBot?.prompt || `You are a helpful AI assistant for ${botName}.`;
+    
     return [
-      `You are "${activeBot.name}", a professional and highly accurate AI assistant.`,
-      activeBot.description ? `Your purpose: ${activeBot.description}.` : '',
-      activeBot.welcomeMessage ? `Greeting style: "${activeBot.welcomeMessage}".` : '',
+      botPrompt,
       hasData ? 'You have a specialized knowledge base. ALWAYS use it as your primary source of truth.' : '',
       'STRICT RULES:',
       '• Respond in the EXACT same language the user writes in (Arabic → reply in Arabic, English → English).',
@@ -147,43 +167,83 @@ export default function ChatInterface({ isEmbedded = false, botId }: ChatInterfa
     ].filter(Boolean).join('\n');
   };
 
-  const aiMode = hasApiKey() ? 'gemini' : 'local';
+  const aiMode = (hasApiKey() && !useLocalOnly) ? 'gemini' : 'local';
 
   const handleSend = async () => {
-    if (!input.trim() || !selectedConv || isTyping) return;
+    if (!input.trim() || isTyping) return;
+
+    let targetConvId = selectedConvId;
+    
+    // Auto-create conversation if none selected
+    if (!targetConvId) {
+      if (activeBotId) {
+        const newConv = createConversation(activeBotId);
+        targetConvId = newConv.id;
+        setSelectedConvId(newConv.id);
+      } else {
+        console.error("❌ Cannot send message: No active bot ID");
+        return;
+      }
+    }
 
     const userText = input.trim();
     setInput('');
     setIsTyping(true);
 
     // Add user message
-    addMessage(selectedConvId, {
+    addMessage(targetConvId, {
       type: 'user',
       content: userText,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     });
 
+    const trainingContext = getTrainingContext(activeBotId);
+    const queryLang = detectLang(userText);
+
     try {
-      // Build history excluding the just-added message (it's not yet in state)
-      const history = buildHistory(selectedConv);
 
-      // Get training context for this bot (RAG)
-      const trainingContext = getTrainingContext(activeBotId);
+      let response = '';
 
-      // Call Gemini with training data
-      const response = await sendMessageToGemini(history, getSystemPrompt(), userText, trainingContext);
+      const passages = retrieveRelevantPassages(userText, trainingContext);
 
-      addMessage(selectedConvId, {
+      // Respect the user's local preference while still allowing fallback if enabled
+      const shouldUseAI = hasApiKey() && !useLocalOnly;
+
+      if (shouldUseAI) {
+        // Get the most up-to-date conversation object
+        const currentConv = botConversations.find(c => c.id === targetConvId) || selectedConv;
+        const history = currentConv ? buildHistory(currentConv) : [];
+        response = await sendMessageToGemini(history, getSystemPrompt(trainingContext.length > 50), userText, trainingContext);
+      } else {
+        // Pure Local RAG - Focus on Organization
+        response = generateLocalAnswer(userText, passages, queryLang);
+      }
+
+      addMessage(targetConvId, {
         type: 'bot',
         content: response,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       });
-    } catch (err) {
-      addMessage(selectedConvId, {
-        type: 'bot',
-        content: "I apologize, I'm having trouble connecting right now. Please try again in a moment.",
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      });
+    } catch (err: any) {
+      const isQuotaError = err?.message?.includes('429') || err?.status === 429;
+      
+      if (isQuotaError && aiMode === 'gemini') {
+        // Automatic fallback to Local RAG when API is blocked
+        const passages = retrieveRelevantPassages(userText, trainingContext);
+        const fallbackResponse = generateLocalAnswer(userText, passages, queryLang);
+        
+        addMessage(targetConvId, {
+          type: 'bot',
+          content: fallbackResponse,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        });
+      } else {
+        addMessage(targetConvId, {
+          type: 'bot',
+          content: "I apologize, I'm having trouble connecting right now. Please try again in a moment.",
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        });
+      }
     } finally {
       setIsTyping(false);
     }
@@ -223,7 +283,7 @@ export default function ChatInterface({ isEmbedded = false, botId }: ChatInterfa
     <div
       className={`flex ${
         isEmbedded
-          ? 'h-full'
+          ? 'h-screen w-full'
           : 'h-[calc(100vh-140px)] lg:h-[calc(100vh-128px)] -mx-4 lg:-mx-8 -mt-4 lg:-mt-8 mb-[-32px]'
       } bg-bc-surface border border-bc-border rounded-xl overflow-hidden`}
     >
@@ -236,15 +296,12 @@ export default function ChatInterface({ isEmbedded = false, botId }: ChatInterfa
         {/* Header */}
         <div className="p-4 border-b border-bc-border space-y-3">
           {/* Bot selector — only show when not embedded with a fixed bot */}
-          {!botId && bots.length > 1 && (
+          {!propBotId && bots.length > 1 && (
             <div className="mb-1">
               <select
                 value={activeBotId}
-                onChange={(e) => {
-                  setActiveBotId(e.target.value);
-                  setSelectedConvId('');
-                }}
-                className="w-full bg-bc-surface-light border border-bc-border rounded-lg px-3 py-1.5 text-xs text-bc-text focus:outline-none focus:ring-1 focus:ring-bc-accent"
+                onChange={(e) => setActiveBotId(e.target.value)}
+                className="w-full bg-bc-surface-light border border-bc-border text-bc-text text-sm rounded-lg p-2 focus:ring-1 focus:ring-bc-accent outline-none"
               >
                 {bots.map((b) => (
                   <option key={b.id} value={b.id}>
@@ -254,71 +311,71 @@ export default function ChatInterface({ isEmbedded = false, botId }: ChatInterfa
               </select>
             </div>
           )}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bc-text-muted" />
-            <Input
-              placeholder="Search conversations..."
-              className="pl-9 bg-bc-surface-light border-bc-border text-bc-text text-[13px] placeholder:text-bc-text-muted h-9"
-            />
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bc-text-muted" />
+              <Input
+                placeholder="Search conversations..."
+                className="pl-9 bg-bc-surface-light border-bc-border text-bc-text text-[13px] placeholder:text-bc-text-muted h-9"
+              />
+            </div>
           </div>
-        </div>
 
-        {/* Conversations */}
-        <ScrollArea className="flex-1">
-          <div className="divide-y divide-bc-border-subtle">
-            {botConversations.length === 0 && (
-              <div className="py-10 text-center text-bc-text-muted text-sm px-4">
-                No conversations yet. Start a new one!
-              </div>
-            )}
-            {botConversations.map((conv) => {
-              const lastMsg = conv.messages.filter((m) => m.type !== 'system').slice(-1)[0];
-              const isSelected = selectedConvId === conv.id;
-              return (
-                <div key={conv.id} className="relative group">
-                  <button
-                    onClick={() => {
-                      setSelectedConvId(conv.id);
-                      setMobileListOpen(false);
-                    }}
-                    className={`w-full flex items-start gap-3 p-4 text-left transition-colors ${
-                      isSelected
-                        ? 'bg-bc-surface-light border-l-[3px] border-bc-accent'
-                        : 'hover:bg-bc-surface-elevated/50 border-l-[3px] border-transparent'
-                    }`}
-                  >
-                    <div className="w-9 h-9 rounded-full bg-bc-accent/20 flex items-center justify-center shrink-0">
-                      <MessageSquare className="w-4 h-4 text-bc-accent" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between">
-                        <p className="text-[13px] font-medium text-bc-text truncate max-w-[140px]">
-                          {conv.title}
-                        </p>
-                        <span className="text-[11px] text-bc-text-muted shrink-0">
-                          {formatTime(conv.updatedAt)}
-                        </span>
-                      </div>
-                      <p className="text-[12px] text-bc-text-muted truncate mt-0.5">
-                        {lastMsg ? lastMsg.content.substring(0, 50) : 'No messages yet'}
-                      </p>
-                      <p className="text-[11px] text-bc-accent mt-1">{activeBot?.name}</p>
-                    </div>
-                  </button>
-                  {/* Delete button */}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      deleteConversation(conv.id);
-                      if (isSelected) setSelectedConvId('');
-                    }}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-md text-bc-text-muted hover:text-bc-error hover:bg-bc-error/10 opacity-0 group-hover:opacity-100 transition-all"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+          {/* Conversations */}
+          <ScrollArea className="flex-1">
+            <div className="divide-y divide-bc-border-subtle">
+              {botConversations.length === 0 && (
+                <div className="py-10 text-center text-bc-text-muted text-sm px-4">
+                  No conversations yet. Start a new one!
                 </div>
-              );
-            })}
+              )}
+              {botConversations.map((conv) => {
+                const lastMsg = conv.messages.filter((m) => m.type !== 'system').slice(-1)[0];
+                const isSelected = selectedConvId === conv.id;
+                return (
+                  <div key={conv.id} className="relative group">
+                    <button
+                      onClick={() => {
+                        setSelectedConvId(conv.id);
+                        setMobileListOpen(false);
+                      }}
+                      className={`w-full flex items-start gap-3 p-4 text-left transition-colors ${
+                        isSelected
+                          ? 'bg-bc-surface-light border-l-[3px] border-bc-accent'
+                          : 'hover:bg-bc-surface-elevated/50 border-l-[3px] border-transparent'
+                      }`}
+                    >
+                      <div className="w-9 h-9 rounded-full bg-bc-accent/20 flex items-center justify-center shrink-0">
+                        <MessageSquare className="w-4 h-4 text-bc-accent" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between">
+                          <p className="text-[13px] font-medium text-bc-text truncate max-w-[140px]">
+                            {conv.title}
+                          </p>
+                          <span className="text-[11px] text-bc-text-muted shrink-0">
+                            {formatTime(conv.updatedAt)}
+                          </span>
+                        </div>
+                        <p className="text-[12px] text-bc-text-muted truncate mt-0.5">
+                          {lastMsg ? lastMsg.content.substring(0, 50) : 'No messages yet'}
+                        </p>
+                        <p className="text-[11px] text-bc-accent mt-1">{activeBot?.name}</p>
+                      </div>
+                    </button>
+                    {/* Delete button */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteConversation(conv.id);
+                        if (isSelected) setSelectedConvId('');
+                      }}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-md text-bc-text-muted hover:text-bc-error hover:bg-bc-error/10 opacity-0 group-hover:opacity-100 transition-all"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                );
+              })}
           </div>
         </ScrollArea>
 
@@ -354,13 +411,15 @@ export default function ChatInterface({ isEmbedded = false, botId }: ChatInterfa
                 <span className="text-[10px] text-bc-accent border border-bc-accent/30 rounded-full px-2 py-0.5">
                   {activeBot?.model || 'Gemini 1.5 Flash'}
                 </span>
-                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${
+                <button 
+                  onClick={() => setUseLocalOnly(!useLocalOnly)}
+                  className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border transition-all flex items-center gap-1 ${
                   aiMode === 'gemini'
-                    ? 'text-bc-success border-bc-success/40 bg-bc-success/10'
-                    : 'text-amber-400 border-amber-400/40 bg-amber-400/10'
+                    ? 'text-bc-success border-bc-success/40 bg-bc-success/10 hover:bg-bc-success/20'
+                    : 'text-bc-accent border-bc-accent/40 bg-bc-accent/10 hover:bg-bc-accent/20'
                 }`}>
-                  {aiMode === 'gemini' ? '✦ GEMINI AI' : '⚡ LOCAL RAG'}
-                </span>
+                  {aiMode === 'gemini' ? '✦ GEMINI AI' : '🔒 LOCAL RAG (No API)'}
+                </button>
               </div>
             </div>
           </div>
@@ -396,9 +455,20 @@ export default function ChatInterface({ isEmbedded = false, botId }: ChatInterfa
                 })}
               </div>
             </div>
-            <button className="p-2 rounded-lg hover:bg-bc-surface-light text-bc-text-muted">
-              <MoreVertical className="w-4 h-4" />
-            </button>
+            <div className="relative group/menu">
+              <button className="p-2 rounded-lg hover:bg-bc-surface-light text-bc-text-muted">
+                <MoreVertical className="w-4 h-4" />
+              </button>
+              <div className="absolute right-0 top-full mt-1 w-36 bg-bc-surface-elevated border border-bc-border rounded-lg shadow-lg opacity-0 invisible group-hover/menu:opacity-100 group-hover/menu:visible transition-all z-20 overflow-hidden">
+                <button
+                  onClick={() => { if (selectedConvId && confirm('Clear all messages?')) clearMessages(selectedConvId); }}
+                  className="flex items-center gap-2 w-full px-3 py-2.5 text-[12px] text-bc-error hover:bg-bc-error/10 transition-colors"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Clear Chat
+                </button>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -422,9 +492,19 @@ export default function ChatInterface({ isEmbedded = false, botId }: ChatInterfa
                         <div className="bg-bc-accent rounded-2xl rounded-tr-sm px-4 py-3">
                           <p className="text-sm text-white">{msg.content}</p>
                         </div>
-                        <span className="text-[10px] text-bc-text-muted mt-1 block text-right">
-                          {msg.timestamp}
-                        </span>
+                        <div className="flex items-center justify-end gap-2 mt-1">
+                          <button
+                            onClick={() => deleteMessage(selectedConvId, msg.id)}
+                            className="text-[10px] text-bc-text-muted hover:text-bc-error transition-colors flex items-center gap-1"
+                            title="Delete"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                            <span>Delete</span>
+                          </button>
+                          <span className="text-[10px] text-bc-text-muted">
+                            {msg.timestamp}
+                          </span>
+                        </div>
                       </div>
                     </div>
                   );
@@ -478,10 +558,11 @@ export default function ChatInterface({ isEmbedded = false, botId }: ChatInterfa
                           <ThumbsUp className="w-3 h-3" />
                         </button>
                         <button
+                          onClick={() => deleteMessage(selectedConvId, msg.id)}
                           className="text-bc-text-muted hover:text-bc-error transition-colors"
-                          title="Dislike"
+                          title="Delete Message"
                         >
-                          <ThumbsDown className="w-3 h-3" />
+                          <Trash2 className="w-3 h-3" />
                         </button>
                       </div>
                     </div>

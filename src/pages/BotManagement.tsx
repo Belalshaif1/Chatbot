@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import {
   MessageSquare,
@@ -40,8 +40,16 @@ export default function BotManagement() {
   const { getBot, updateBot, deleteBot } = useBots();
   const [activeTab, setActiveTab] = useState('playground');
   const [copied, setCopied] = useState<string | null>(null);
+  const [systemPrompt, setSystemPrompt] = useState('');
 
   const botData = getBot(botId || '');
+
+  // Initialize prompt from bot data
+  useEffect(() => {
+    if (botData && !systemPrompt) {
+      setSystemPrompt(botData.prompt || `You are a helpful AI assistant for ${botData.name}.`);
+    }
+  }, [botData, systemPrompt]);
 
   const handleCopy = (text: string, key: string) => {
     navigator.clipboard.writeText(text);
@@ -64,20 +72,23 @@ export default function BotManagement() {
     );
   }
 
+  const origin = window.location.origin;
+  const shareUrl = `${origin}/share/${botData.id}`;
+
   const scriptCode = `<script
-  src="https://botcraft.ai/embed.js"
+  src="${origin}/embed.js"
   data-bot-id="${botData.id}"
   defer
 ></script>`;
 
   const iframeCode = `<iframe
-  src="https://botcraft.ai/chat/${botData.id}"
+  src="${shareUrl}"
   width="100%"
   height="600"
   frameborder="0"
 ></iframe>`;
 
-  const apiCode = `curl -X POST https://api.botcraft.ai/v1/chat \\
+  const apiCode = `curl -X POST ${origin}/api/chat \\
   -H "Authorization: Bearer YOUR_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -114,13 +125,25 @@ export default function BotManagement() {
           <Button
             variant="outline"
             className="border-bc-border text-bc-text-secondary text-xs h-9 gap-1.5"
-            onClick={() => handleCopy(`https://botcraft.ai/chat/${botData.id}`, 'link')}
+            onClick={() => window.open(shareUrl, '_blank')}
           >
-            {copied === 'link' ? <Check className="w-3.5 h-3.5 text-bc-success" /> : <ExternalLink className="w-3.5 h-3.5" />}
+            <ExternalLink className="w-3.5 h-3.5" />
+            Preview
+          </Button>
+          <Button
+            variant="outline"
+            className="border-bc-border text-bc-text-secondary text-xs h-9 gap-1.5"
+            onClick={() => handleCopy(shareUrl, 'link')}
+          >
+            {copied === 'link' ? <Check className="w-3.5 h-3.5 text-bc-success" /> : <Share2 className="w-3.5 h-3.5" />}
             {copied === 'link' ? 'Copied!' : 'Share Link'}
           </Button>
-          <Button className="bg-bc-accent hover:bg-bc-accent-hover text-white text-xs h-9 px-4">
-            Publish Bot
+          <Button 
+            onClick={() => updateBot(botData.id, { status: 'live' })}
+            disabled={botData.status === 'live'}
+            className="bg-bc-accent hover:bg-bc-accent-hover text-white text-xs h-9 px-4 disabled:opacity-50"
+          >
+            {botData.status === 'live' ? 'Published' : 'Publish Bot'}
           </Button>
         </div>
       </div>
@@ -168,9 +191,13 @@ export default function BotManagement() {
                 </p>
                 <textarea
                   className="w-full h-40 bg-bc-surface-light border border-bc-border rounded-lg p-3 text-xs text-bc-text focus:outline-none focus:ring-1 focus:ring-bc-accent resize-none font-mono leading-relaxed"
-                  defaultValue={`You are a helpful and professional AI assistant for ${botData.name}. Your goal is to provide accurate, helpful responses based on the training data provided. Always be polite, concise, and professional.`}
+                  value={systemPrompt}
+                  onChange={(e) => setSystemPrompt(e.target.value)}
                 />
-                <Button className="w-full mt-3 bg-bc-accent hover:bg-bc-accent-hover text-white text-xs h-9">
+                <Button 
+                  onClick={() => updateBot(botData.id, { prompt: systemPrompt })}
+                  className="w-full mt-3 bg-bc-accent hover:bg-bc-accent-hover text-white text-xs h-9"
+                >
                   Save Prompt
                 </Button>
               </div>
@@ -317,20 +344,40 @@ export default function BotManagement() {
                   <p className="text-xs text-bc-text-muted">Share a direct link to your chatbot</p>
                 </div>
               </div>
-              <div className="flex gap-2">
-                <Input
-                  readOnly
-                  value={`https://botcraft.ai/chat/${botData.id}`}
-                  className="bg-bc-surface-light border-bc-border text-bc-text-secondary text-sm font-mono"
-                />
-                <Button
-                  variant="outline"
-                  className="border-bc-border shrink-0 gap-1.5"
-                  onClick={() => handleCopy(`https://botcraft.ai/chat/${botData.id}`, 'url')}
-                >
-                  {copied === 'url' ? <Check className="w-4 h-4 text-bc-success" /> : <Copy className="w-4 h-4" />}
-                  {copied === 'url' ? 'Copied!' : 'Copy'}
-                </Button>
+              <div className="flex flex-wrap gap-2">
+                <div className="flex-1 min-w-[200px] flex gap-2">
+                  <Input
+                    readOnly
+                    value={shareUrl}
+                    className="bg-bc-surface-light border-bc-border text-bc-text-secondary text-sm font-mono"
+                  />
+                  <Button
+                    variant="outline"
+                    className="border-bc-border shrink-0 gap-1.5"
+                    onClick={() => handleCopy(shareUrl, 'url')}
+                  >
+                    {copied === 'url' ? <Check className="w-4 h-4 text-bc-success" /> : <Copy className="w-4 h-4" />}
+                    {copied === 'url' ? 'Copied!' : 'Copy'}
+                  </Button>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    className="border-green-500/30 text-green-500 hover:bg-green-500/10 gap-1.5"
+                    onClick={() => window.open(`https://wa.me/?text=${encodeURIComponent('Chat with my AI assistant: ' + shareUrl)}`, '_blank')}
+                  >
+                    <MessageSquare className="w-4 h-4" />
+                    WhatsApp
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="border-bc-accent/30 text-bc-accent hover:bg-bc-accent/10 gap-1.5"
+                    onClick={() => window.open(`mailto:?subject=Chat with our AI Assistant&body=${encodeURIComponent('You can chat with our AI assistant here: ' + shareUrl)}`, '_blank')}
+                  >
+                    <Globe className="w-4 h-4" />
+                    Email
+                  </Button>
+                </div>
               </div>
             </div>
 

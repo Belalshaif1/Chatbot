@@ -16,16 +16,19 @@ export default function Login() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setIsLoading(true);
-    setTimeout(() => {
-      const result = login(email, password);
-      setIsLoading(false);
+    try {
+      const result = await login(email, password);
       if (result.ok) navigate('/dashboard');
       else setError(result.message);
-    }, 700);
+    } catch (err) {
+      setError('An unexpected error occurred. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -76,9 +79,14 @@ export default function Login() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="password" className={`text-[13px] font-medium text-bc-text-secondary ${isRTL ? 'mr-1' : 'ml-1'}`}>
-                {t.login.password}
-              </Label>
+              <div className="flex items-center justify-between ml-1 mr-1">
+                <Label htmlFor="password" className="text-[13px] font-medium text-bc-text-secondary">
+                  {t.login.password}
+                </Label>
+                <Link to="/forgot-password" className="text-[12px] text-bc-accent hover:underline">
+                  {lang === 'ar' ? 'نسيت كلمة المرور؟' : 'Forgot Password?'}
+                </Link>
+              </div>
               <div className="relative">
                 <Lock className={`absolute ${isRTL ? 'right-3.5' : 'left-3.5'} top-1/2 -translate-y-1/2 w-4 h-4 text-bc-text-muted`} />
                 <Input

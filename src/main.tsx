@@ -3,17 +3,18 @@ import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import './index.css'
 import App from './App.tsx'
-import { AuthProvider, useAuth } from './context/UserContext'
+import { AuthProvider } from './context/UserContext'
 import { BotProvider } from './context/BotContext'
 import { SourceProvider } from './context/SourceContext'
 import { ChatProvider } from './context/ChatContext'
 import { LangProvider } from './context/LangContext'
 
+import { ErrorBoundary } from './components/ErrorBoundary'
+
 // Inner component that can access AuthContext to pass userId to BotProvider
 function AppWithProviders() {
-  const { currentUser, isSuperAdmin } = useAuth();
   return (
-    <BotProvider userId={currentUser?.id} isSuperAdmin={isSuperAdmin}>
+    <BotProvider>
       <SourceProvider>
         <ChatProvider>
           <App />
@@ -25,12 +26,14 @@ function AppWithProviders() {
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <BrowserRouter>
-      <LangProvider>
-        <AuthProvider>
-          <AppWithProviders />
-        </AuthProvider>
-      </LangProvider>
-    </BrowserRouter>
+    <ErrorBoundary>
+      <BrowserRouter>
+        <LangProvider>
+          <AuthProvider>
+            <AppWithProviders />
+          </AuthProvider>
+        </LangProvider>
+      </BrowserRouter>
+    </ErrorBoundary>
   </StrictMode>,
 )

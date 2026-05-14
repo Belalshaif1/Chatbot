@@ -19,7 +19,6 @@ import {
   ChevronDown,
   Eye,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/context/UserContext';
 import { useBots } from '@/context/BotContext';
@@ -31,7 +30,7 @@ const PLANS = ['free', 'pro', 'enterprise'] as const;
 export default function AdminPanel() {
   const { allUsers, isSuperAdmin, suspendUser, activateUser, deleteUser, updateUserPlan, updateUserRole } = useAuth();
   const { allBots, suspendBot, activateBot, deleteBot } = useBots();
-  const { t, isRTL } = useLang();
+  const { t } = useLang();
 
   const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'bots'>('overview');
   const [userSearch, setUserSearch] = useState('');
@@ -216,7 +215,7 @@ export default function AdminPanel() {
             />
           </div>
 
-          <div className="bg-bc-surface border border-bc-border rounded-xl overflow-hidden">
+          <div className="bg-bc-surface border border-bc-border rounded-xl pb-40">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-bc-border bg-bc-surface-light">
@@ -254,24 +253,29 @@ export default function AdminPanel() {
                         </p>
                       </td>
                       <td className="px-4 py-4 hidden sm:table-cell">
-                        <div className="relative group">
-                          <button className="flex items-center gap-1">
+                        <div className="relative">
+                          <button 
+                            onClick={() => setOpenMenuId(openMenuId === `plan-${user.id}` ? null : `plan-${user.id}`)}
+                            className="flex items-center gap-1 hover:bg-bc-surface-light px-2 py-1 rounded transition-colors"
+                          >
                             {planBadge(user.plan)}
                             <ChevronDown className="w-3 h-3 text-bc-text-muted" />
                           </button>
-                          <div className="absolute left-0 top-full mt-1 bg-bc-surface-elevated border border-bc-border rounded-lg shadow-lg z-10 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all min-w-[120px]">
-                            {PLANS.map((p) => (
-                              <button
-                                key={p}
-                                onClick={() => updateUserPlan(user.id, p)}
-                                className={`flex items-center gap-2 w-full px-3 py-2 text-[12px] hover:bg-bc-surface-light transition-colors capitalize ${user.plan === p ? 'text-bc-accent font-semibold' : 'text-bc-text-secondary'}`}
-                              >
-                                {p === 'enterprise' && <Crown className="w-3 h-3 text-amber-400" />}
-                                {p === 'pro' && <Shield className="w-3 h-3 text-bc-accent" />}
-                                {p}
-                              </button>
-                            ))}
-                          </div>
+                          {openMenuId === `plan-${user.id}` && (
+                            <div className="absolute left-0 top-full mt-1 bg-bc-surface-elevated border border-bc-border rounded-lg shadow-lg z-20 min-w-[120px] overflow-hidden">
+                              {PLANS.map((p) => (
+                                <button
+                                  key={p}
+                                  onClick={() => { updateUserPlan(user.id, p); setOpenMenuId(null); }}
+                                  className={`flex items-center gap-2 w-full px-3 py-2 text-[12px] hover:bg-bc-surface-light transition-colors capitalize ${user.plan === p ? 'text-bc-accent font-semibold' : 'text-bc-text-secondary'}`}
+                                >
+                                  {p === 'enterprise' && <Crown className="w-3 h-3 text-amber-400" />}
+                                  {p === 'pro' && <Shield className="w-3 h-3 text-bc-accent" />}
+                                  {p}
+                                </button>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       </td>
                       <td className="px-4 py-4">
@@ -359,7 +363,7 @@ export default function AdminPanel() {
             />
           </div>
 
-          <div className="bg-bc-surface border border-bc-border rounded-xl overflow-hidden">
+          <div className="bg-bc-surface border border-bc-border rounded-xl pb-40">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-bc-border bg-bc-surface-light">
@@ -406,41 +410,47 @@ export default function AdminPanel() {
                         >
                           <Eye className="w-4 h-4" />
                         </Link>
-                        <div className="relative group">
-                          <button className="p-1.5 rounded-md hover:bg-bc-surface-light text-bc-text-muted">
+                        <div className="relative">
+                          <button 
+                            onClick={() => setOpenMenuId(openMenuId === `bot-${bot.id}` ? null : `bot-${bot.id}`)}
+                            className="p-1.5 rounded-md hover:bg-bc-surface-light text-bc-text-muted transition-colors"
+                          >
                             <MoreVertical className="w-4 h-4" />
                           </button>
-                          <div className="absolute right-0 top-full mt-1 bg-bc-surface-elevated border border-bc-border rounded-lg shadow-lg z-20 min-w-[160px] opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all">
-                            {bot.status !== 'suspended' ? (
+                          {openMenuId === `bot-${bot.id}` && (
+                            <div className="absolute right-0 top-full mt-1 bg-bc-surface-elevated border border-bc-border rounded-lg shadow-lg z-20 min-w-[160px] overflow-hidden">
+                              {bot.status !== 'suspended' ? (
+                                <button
+                                  onClick={() => { suspendBot(bot.id); setOpenMenuId(null); }}
+                                  className="flex items-center gap-2 w-full px-3 py-2.5 text-[12px] text-bc-warning hover:bg-bc-warning/10 transition-colors"
+                                >
+                                  <AlertTriangle className="w-3.5 h-3.5" />
+                                  {t.admin.actions.suspendBot}
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => { activateBot(bot.id); setOpenMenuId(null); }}
+                                  className="flex items-center gap-2 w-full px-3 py-2.5 text-[12px] text-bc-success hover:bg-bc-success/10 transition-colors"
+                                >
+                                  <CheckCircle2 className="w-3.5 h-3.5" />
+                                  {t.admin.actions.activateBot}
+                                </button>
+                              )}
+                              <div className="border-t border-bc-border-subtle my-1" />
                               <button
-                                onClick={() => suspendBot(bot.id)}
-                                className="flex items-center gap-2 w-full px-3 py-2.5 text-[12px] text-bc-warning hover:bg-bc-warning/10 transition-colors"
+                                onClick={() => {
+                                  if (confirm(t.admin.confirmDeleteBot(bot.name))) {
+                                    deleteBot(bot.id);
+                                    setOpenMenuId(null);
+                                  }
+                                }}
+                                className="flex items-center gap-2 w-full px-3 py-2.5 text-[12px] text-bc-error hover:bg-bc-error/10 transition-colors"
                               >
-                                <AlertTriangle className="w-3.5 h-3.5" />
-                                {t.admin.actions.suspendBot}
+                                <Trash2 className="w-3.5 h-3.5" />
+                                Delete Bot
                               </button>
-                            ) : (
-                              <button
-                                onClick={() => activateBot(bot.id)}
-                                className="flex items-center gap-2 w-full px-3 py-2.5 text-[12px] text-bc-success hover:bg-bc-success/10 transition-colors"
-                              >
-                                <CheckCircle2 className="w-3.5 h-3.5" />
-                                {t.admin.actions.activateBot}
-                              </button>
-                            )}
-                            <div className="border-t border-bc-border-subtle my-1" />
-                            <button
-                              onClick={() => {
-                                if (confirm(t.admin.confirmDeleteBot(bot.name))) {
-                                  deleteBot(bot.id);
-                                }
-                              }}
-                              className="flex items-center gap-2 w-full px-3 py-2.5 text-[12px] text-bc-error hover:bg-bc-error/10 transition-colors"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                              Delete Bot
-                            </button>
-                          </div>
+                            </div>
+                          )}
                         </div>
                       </div>
                     </td>

@@ -17,6 +17,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useBots } from '@/context/BotContext';
 import { useAuth } from '@/context/UserContext';
+import { useSources } from '@/context/SourceContext';
+import { formatFileSize } from '@/lib/extractor';
 
 const steps = [
   { id: 1, label: 'Name Your Bot', icon: Bot },
@@ -40,7 +42,9 @@ export default function Onboarding() {
   const navigate = useNavigate();
   const { addBot } = useBots();
   const { currentUser } = useAuth();
+  const { addSource } = useSources();
   const [step, setStep] = useState(1);
+  const [isCreating, setIsCreating] = useState(false);
   const [botName, setBotName] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState('');
@@ -50,22 +54,42 @@ export default function Onboarding() {
   const [avatar, setAvatar] = useState('🤖');
   const avatarOptions = ['🤖', '💬', '🧠', '⚡', '✨', '🎯'];
 
-  const handleNext = () => {
+  const handleNext = async () => {
     if (step === 3) {
-      addBot(
-        {
-          name: botName || 'My First Bot',
-          description: description || 'AI chatbot assistant',
-          welcomeMessage: `Hi! I'm ${botName || 'your assistant'}. How can I help you?`,
-          model: 'Gemini 1.5 Flash',
-          status: 'live',
-          accentColor: color,
-          avatar: 0,
-          darkTheme: true,
-          widgetPosition: 'right',
-        },
-        currentUser?.id || 'unknown'
-      );
+      setIsCreating(true);
+      try {
+        const newBot = await addBot(
+          {
+            name: botName || 'My First Bot',
+            description: description || 'AI chatbot assistant',
+            welcomeMessage: `Hi! I'm ${botName || 'your assistant'}. How can I help you?`,
+            model: 'Gemini 1.5 Flash',
+            status: 'live',
+            accentColor: color,
+            avatar: 0,
+            darkTheme: true,
+            widgetPosition: 'right',
+          },
+          currentUser?.id || 'unknown'
+        );
+
+        // If training data was provided, save it
+        if (trainingContent && trainingMethod) {
+          await addSource({
+            botId: newBot.id,
+            name: trainingMethod === 'website' ? trainingContent : 'Initial Knowledge',
+            type: trainingMethod === 'website' ? 'website' : 'text',
+            content: trainingContent,
+            sizeLabel: trainingMethod === 'website' ? 'URL' : formatFileSize(trainingContent.length),
+            charCount: trainingContent.length,
+            status: 'ready',
+          });
+        }
+      } catch (error) {
+        console.error('Error creating bot:', error);
+      } finally {
+        setIsCreating(false);
+      }
     }
     if (step < 4) setStep(step + 1);
   };
@@ -374,11 +398,17 @@ export default function Onboarding() {
             </button>
             <Button
               onClick={handleNext}
-              disabled={step === 1 && !botName.trim()}
+              disabled={(step === 1 && !botName.trim()) || isCreating}
               className="bg-bc-accent hover:bg-bc-accent-hover text-white px-8 h-10 gap-2"
             >
-              {step === 3 ? 'Create Bot' : 'Continue'}
-              <ArrowRight className="w-4 h-4" />
+              {isCreating ? (
+                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              ) : (
+                <>
+                  {step === 3 ? 'Create Bot' : 'Continue'}
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
             </Button>
           </div>
         )}

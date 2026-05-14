@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
 export type SourceType = 'file' | 'website' | 'text' | 'qa';
 export type SourceStatus = 'processing' | 'ready' | 'error';
@@ -18,33 +19,51 @@ export interface TrainingSource {
 
 interface SourceContextType {
   sources: TrainingSource[];
+  isLoading: boolean;
   getSourcesForBot: (botId: string) => TrainingSource[];
-  getTrainingContext: (botId: string) => string;   // Combined training text for Gemini
-  addSource: (source: Omit<TrainingSource, 'id' | 'createdAt'>) => string;
-  deleteSource: (id: string) => void;
-  updateSourceStatus: (id: string, status: SourceStatus, content?: string, error?: string) => void;
+  getTrainingContext: (botId: string) => string;
+  addSource: (source: Omit<TrainingSource, 'id' | 'createdAt'>) => Promise<string>;
+  deleteSource: (id: string) => Promise<void>;
+  updateSourceStatus: (id: string, status: SourceStatus, content?: string, error?: string) => Promise<void>;
 }
 
 const SourceContext = createContext<SourceContextType | undefined>(undefined);
 
 export const SourceProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [sources, setSources] = useState<TrainingSource[]>(() => {
-    const saved = localStorage.getItem('bc_training_sources');
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [isLoading, setIsLoading] = useState(true);
+  const [sources, setSources] = useState<TrainingSource[]>([]);
 
   useEffect(() => {
-    // Only persist metadata + first 100KB of content per source to avoid quota issues
-    const toSave = sources.map(s => ({
-      ...s,
-      content: s.content.slice(0, 100_000),
-    }));
-    try {
-      localStorage.setItem('bc_training_sources', JSON.stringify(toSave));
-    } catch {
-      console.warn('localStorage quota exceeded — training sources not fully persisted');
+    const fetchSources = async () => {
+      setIsLoading(true);
+      if (isSupabaseConfigured()) {
+        const { data, error } = await supabase.from('sources').select('*');
+        if (data) setSources(data);
+        else if (error) console.error('Error fetching sources:', error);
+      } else {
+        const saved = localStorage.getItem('bc_training_sources');
+        if (saved) setSources(JSON.parse(saved));
+      }
+      setIsLoading(false);
+    };
+
+    fetchSources();
+  }, []);
+
+  useEffect(() => {
+    if (!isSupabaseConfigured() && !isLoading && sources.length > 0) {
+      // Only persist metadata + first 100KB of content per source to avoid quota issues
+      const toSave = sources.map(s => ({
+        ...s,
+        content: s.content.slice(0, 100_000),
+      }));
+      try {
+        localStorage.setItem('bc_training_sources', JSON.stringify(toSave));
+      } catch {
+        console.warn('localStorage quota exceeded — training sources not fully persisted');
+      }
     }
-  }, [sources]);
+  }, [sources, isLoading]);
 
   const getSourcesForBot = (botId: string) =>
     sources.filter(s => s.botId === botId && s.status === 'ready');
@@ -60,34 +79,48 @@ export const SourceProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       return `=== ${label} ===\n${s.content}`;
     });
 
-    return `KNOWLEDGE BASE (use this to answer questions accurately):\n\n${parts.join('\n\n')}`;
+    return parts.join('\n\n');
   };
 
-  const addSource = (sourceData: Omit<TrainingSource, 'id' | 'createdAt'>): string => {
+  const addSource = async (sourceData: Omit<TrainingSource, 'id' | 'createdAt'>): Promise<string> => {
     const id = 'src-' + Math.random().toString(36).substr(2, 9);
     const newSource: TrainingSource = {
       ...sourceData,
       id,
       createdAt: new Date().toISOString(),
     };
+
+    if (isSupabaseConfigured()) {
+      await supabase.from('sources').insert(newSource);
+    }
+
     setSources(prev => [newSource, ...prev]);
     return id;
   };
 
-  const deleteSource = (id: string) => {
+  const deleteSource = async (id: string) => {
+    if (isSupabaseConfigured()) {
+      await supabase.from('sources').delete().eq('id', id);
+    }
     setSources(prev => prev.filter(s => s.id !== id));
   };
 
-  const updateSourceStatus = (id: string, status: SourceStatus, content?: string, error?: string) => {
+  const updateSourceStatus = async (id: string, status: SourceStatus, content?: string, error?: string) => {
+    const updates = { status, ...(content !== undefined ? { content, charCount: content.length } : {}), ...(error ? { errorMsg: error } : {}) };
+    
+    if (isSupabaseConfigured()) {
+      await supabase.from('sources').update(updates).eq('id', id);
+    }
+
     setSources(prev => prev.map(s =>
       s.id === id
-        ? { ...s, status, ...(content !== undefined ? { content, charCount: content.length } : {}), ...(error ? { errorMsg: error } : {}) }
+        ? { ...s, ...updates }
         : s
     ));
   };
 
   return (
-    <SourceContext.Provider value={{ sources, getSourcesForBot, getTrainingContext, addSource, deleteSource, updateSourceStatus }}>
+    <SourceContext.Provider value={{ sources, isLoading, getSourcesForBot, getTrainingContext, addSource, deleteSource, updateSourceStatus }}>
       {children}
     </SourceContext.Provider>
   );

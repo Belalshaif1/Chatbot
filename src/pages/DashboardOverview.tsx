@@ -7,13 +7,12 @@ import {
   Clock,
   Zap,
   Edit,
-  Eye,
-  MoreVertical,
   Sparkles,
   Plus,
   TrendingUp,
   TrendingDown,
   AlertCircle,
+  Share2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -269,15 +268,22 @@ export default function DashboardOverview() {
                   {bot.conversations.toLocaleString()} conversations
                 </p>
                 <div className="flex items-center gap-1">
-                  <button className="p-1.5 rounded-md hover:bg-bc-surface-light text-bc-text-muted transition-colors">
+                  <button 
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      const shareUrl = `${window.location.origin}/share/${bot.id}`;
+                      navigator.clipboard.writeText(shareUrl);
+                      alert('Link copied to clipboard!');
+                    }}
+                    className="p-1.5 rounded-md hover:bg-bc-accent/10 text-bc-accent transition-colors" 
+                    title="Copy Share Link"
+                  >
+                    <Share2 className="w-3.5 h-3.5" />
+                  </button>
+                  <Link to={`/dashboard/bot/${bot.id}`} className="p-1.5 rounded-md hover:bg-bc-surface-light text-bc-text-muted transition-colors">
                     <Edit className="w-3.5 h-3.5" />
-                  </button>
-                  <button className="p-1.5 rounded-md hover:bg-bc-surface-light text-bc-text-muted transition-colors">
-                    <Eye className="w-3.5 h-3.5" />
-                  </button>
-                  <button className="p-1.5 rounded-md hover:bg-bc-surface-light text-bc-text-muted transition-colors">
-                    <MoreVertical className="w-3.5 h-3.5" />
-                  </button>
+                  </Link>
                 </div>
               </Link>
             ))}

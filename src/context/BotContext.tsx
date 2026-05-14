@@ -1,18 +1,18 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import type { Bot } from '../types/bot';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { useAuth } from './UserContext';
 
 interface BotContextType {
-  // All bots (admin use)
   allBots: Bot[];
-
-  // Current user's bots (or all if superadmin)
   bots: Bot[];
+  isLoading: boolean;
 
-  addBot: (bot: Omit<Bot, 'id' | 'createdAt' | 'conversations' | 'userId' | 'initial' | 'gradient'>, userId: string) => Bot;
-  updateBot: (id: string, bot: Partial<Bot>) => void;
-  deleteBot: (id: string) => void;
-  suspendBot: (id: string) => void;
-  activateBot: (id: string) => void;
+  addBot: (botData: Omit<Bot, 'id' | 'createdAt' | 'conversations' | 'userId' | 'initial' | 'gradient'>, userId: string) => Promise<Bot>;
+  updateBot: (id: string, bot: Partial<Bot>) => Promise<void>;
+  deleteBot: (id: string) => Promise<void>;
+  suspendBot: (id: string) => Promise<void>;
+  activateBot: (id: string) => Promise<void>;
   getBot: (id: string) => Bot | undefined;
   getBotsForUser: (userId: string) => Bot[];
 }
@@ -56,35 +56,48 @@ const seedBots: Bot[] = [
   },
 ];
 
-export const BotProvider: React.FC<{ children: React.ReactNode; userId?: string; isSuperAdmin?: boolean }> = ({
-  children,
-  userId,
-  isSuperAdmin,
-}) => {
-  const [allBots, setAllBots] = useState<Bot[]>(() => {
-    const saved = localStorage.getItem('bc_all_bots');
-    if (saved) {
-      const parsed: Bot[] = JSON.parse(saved);
-      // Ensure seed bots exist for superadmin
-      const seedIds = seedBots.map((b) => b.id);
-      const missingSeeds = seedBots.filter((sb) => !parsed.find((b) => b.id === sb.id));
-      return [...parsed.filter((b) => !seedIds.includes(b.id)), ...seedBots, ...missingSeeds];
-    }
-    return seedBots;
-  });
+export const BotProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { currentUser, isSuperAdmin } = useAuth();
+  const [isLoading, setIsLoading] = useState(true);
+  const [allBots, setAllBots] = useState<Bot[]>([]);
+
+  // ── Sync with Supabase or LocalStorage ───────────────────
+  useEffect(() => {
+    const fetchBots = async () => {
+      setIsLoading(true);
+      if (isSupabaseConfigured()) {
+        const { data, error } = await supabase.from('bots').select('*');
+        if (data) setAllBots(data);
+        else if (error) console.error('Error fetching bots:', error);
+      } else {
+        const saved = localStorage.getItem('bc_all_bots');
+        if (saved) {
+          const parsed: Bot[] = JSON.parse(saved);
+          setAllBots(parsed);
+        } else {
+          setAllBots(seedBots);
+        }
+      }
+      setIsLoading(false);
+    };
+
+    fetchBots();
+  }, []);
 
   useEffect(() => {
-    localStorage.setItem('bc_all_bots', JSON.stringify(allBots));
-  }, [allBots]);
+    if (!isSupabaseConfigured() && !isLoading && allBots.length > 0) {
+      localStorage.setItem('bc_all_bots', JSON.stringify(allBots));
+    }
+  }, [allBots, isLoading]);
 
   // Filtered bots for current session
   const bots = isSuperAdmin
     ? allBots
-    : allBots.filter((b) => b.userId === userId && b.status !== 'suspended');
+    : allBots.filter((b) => b.userId === currentUser?.id && b.status !== 'suspended');
 
   const getBotsForUser = (uid: string) => allBots.filter((b) => b.userId === uid);
 
-  const addBot = (botData: Omit<Bot, 'id' | 'createdAt' | 'conversations' | 'userId' | 'initial' | 'gradient'>, uid: string): Bot => {
+  const addBot = async (botData: any, uid: string): Promise<Bot> => {
     const newBot: Bot = {
       ...botData,
       userId: uid,
@@ -94,31 +107,43 @@ export const BotProvider: React.FC<{ children: React.ReactNode; userId?: string;
       initial: botData.name.substring(0, 2).toUpperCase(),
       gradient: 'from-bc-accent to-blue-600',
     };
+
+    if (isSupabaseConfigured()) {
+      const { error } = await supabase.from('bots').insert(newBot);
+      if (error) console.error('Supabase insert error:', error);
+    }
+
     setAllBots((prev) => [...prev, newBot]);
     return newBot;
   };
 
-  const updateBot = (id: string, botData: Partial<Bot>) => {
+  const updateBot = async (id: string, botData: Partial<Bot>) => {
+    if (isSupabaseConfigured()) {
+      await supabase.from('bots').update(botData).eq('id', id);
+    }
     setAllBots((prev) => prev.map((b) => (b.id === id ? { ...b, ...botData } : b)));
   };
 
-  const deleteBot = (id: string) => {
+  const deleteBot = async (id: string) => {
+    if (isSupabaseConfigured()) {
+      await supabase.from('bots').delete().eq('id', id);
+    }
     setAllBots((prev) => prev.filter((b) => b.id !== id));
   };
 
-  const suspendBot = (id: string) => {
-    setAllBots((prev) => prev.map((b) => (b.id === id ? { ...b, status: 'suspended' } : b)));
+  const suspendBot = async (id: string) => {
+    await updateBot(id, { status: 'suspended' });
   };
 
-  const activateBot = (id: string) => {
-    setAllBots((prev) => prev.map((b) => (b.id === id ? { ...b, status: 'live' } : b)));
+  const activateBot = async (id: string) => {
+    await updateBot(id, { status: 'live' });
   };
 
   const getBot = (id: string) => allBots.find((b) => b.id === id);
 
   return (
     <BotContext.Provider
-      value={{ allBots, bots, addBot, updateBot, deleteBot, suspendBot, activateBot, getBot, getBotsForUser }}
+      value={{ allBots, bots, isLoading, addBot, updateBot, deleteBot, suspendBot, activateBot, getBot, getBotsForUser }}
     >
       {children}
     </BotContext.Provider>

@@ -13,6 +13,7 @@ export interface Bot {
   avatar: number;
   darkTheme: boolean;
   widgetPosition: 'left' | 'right';
+  prompt?: string;
   createdAt: string;
 }
 

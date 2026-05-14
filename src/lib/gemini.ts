@@ -71,12 +71,7 @@ async function callGeminiApi(
     if (!response.ok) {
       const err = await response.text();
       console.error('❌ Gemini API error:', response.status, err);
-      // Show the actual error to user in dev mode
-      if (import.meta.env.DEV) {
-        const errData = JSON.parse(err || '{}');
-        const msg = errData?.error?.message || err;
-        return `⚠️ Gemini API Error (${response.status}): ${msg}\n\nالحل: تحقق من صلاحية مفتاح API في ملف .env`;
-      }
+      // Fallback to Local RAG on ANY API failure (Quota, Auth, etc)
       return localRagResponse(userMessage, systemPrompt, trainingContext);
     }
 
@@ -126,13 +121,13 @@ ${trimmedContext}
 ═══════════════════════════════════════════
 
 STRICT INSTRUCTIONS FOR USING THE KNOWLEDGE BASE:
-1. ALWAYS search the knowledge base before answering.
-2. If the answer is clearly in the knowledge base → answer precisely from it.
-3. If partially in the knowledge base → combine knowledge base info with logical reasoning, but label any additions.
-4. If completely absent from the knowledge base → say: "This information is not in my knowledge base. Based on general knowledge: [answer]"
-5. NEVER fabricate facts that are not in the knowledge base.
-6. Quote exact figures, names, prices, and dates from the knowledge base — accuracy is critical.
-7. When answering, you can reformat and rephrase the content naturally — do not copy-paste robotically.
+1. ACCURACY IS PRIORITY #1: Your answer must be 99% accurate based ONLY on the Knowledge Base.
+2. ORGANIZATION: Use highly structured formatting. Use **Tables** for comparisons or lists of items, **Bullet points** for features, and **Bold headings** for different sections.
+3. If the answer is clearly in the knowledge base → answer precisely from it.
+4. CROSS-LANGUAGE SUPPORT: If the Knowledge Base is in English and the user asks in Arabic (or vice versa), translate the relevant information accurately into the user's language.
+5. If information is missing → say "This specific detail is not in my knowledge base" then provide the closest relevant info.
+6. Quote exact figures, names, prices, and dates — do not generalize.
+7. Tone: Professional, helpful, and very organized.
 `;
 }
 
@@ -163,7 +158,7 @@ async function localRagResponse(
 
   if (trainingContext && trainingContext.length > 50) {
     const passages = retrieveRelevantPassages(userMessage, trainingContext, 5);
-    return generateLocalAnswer(userMessage, passages, extractBotName(systemPrompt), lang);
+    return generateLocalAnswer(userMessage, passages, lang);
   }
 
   return lang === 'ar'

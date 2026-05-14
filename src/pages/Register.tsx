@@ -37,7 +37,7 @@ export default function Register() {
   ];
   const strengthColor = ['', 'bg-bc-error', 'bg-bc-warning', 'bg-blue-500', 'bg-bc-success'];
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     if (form.password !== form.confirmPassword) {
@@ -45,12 +45,15 @@ export default function Register() {
       return;
     }
     setIsLoading(true);
-    setTimeout(() => {
-      const result = register(form.name, form.email, form.password);
-      setIsLoading(false);
+    try {
+      const result = await register(form.name, form.email, form.password);
       if (result.ok) navigate('/dashboard');
       else setError(result.message);
-    }, 700);
+    } catch (err) {
+      setError('An unexpected error occurred. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
